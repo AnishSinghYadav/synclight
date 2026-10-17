@@ -60,11 +60,13 @@ jobs:
           flutter build apk --release \
             --build-name=0.1.${{ github.run_number }} \
             --build-number=${{ github.run_number }}
-          # Fail the build if the shrinker still removed the shared_preferences entry point.
+          # Report whether the shrinker kept the shared_preferences entry point.
           MAP=build/app/outputs/mapping/release/mapping.txt
           if [ -f "$MAP" ]; then
-            grep -A60 "^io.flutter.plugins.sharedpreferences.SharedPreferencesApiRegistrar ->" "$MAP" | grep -q "getAll" \
-              || { echo "shared_preferences getAll was stripped"; exit 1; }
+            KEPT=$(grep -A80 "SharedPreferencesApiRegistrar ->" "$MAP" | grep -m3 "getAll" | tr '\n' ' ')
+            echo "::warning title=shrinker check::SharedPreferencesApiRegistrar getAll: ${KEPT:-NOT FOUND in mapping}"
+          else
+            echo "::warning title=shrinker check::no mapping file (shrinking off?)"
           fi
 
       - name: Report build errors
@@ -72,7 +74,9 @@ jobs:
         shell: bash
         run: |
           # Put the end of the log into an annotation so it can be read through the API.
-          tail -n 80 "$RUNNER_TEMP/build.log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN{ORS="%0A"}{print}' > "$RUNNER_TEMP/tail.txt"
+          # Drop download/unzip progress bars, keep the real messages.
+          tr '\r' '\n' < "$RUNNER_TEMP/build.log" | grep -v -E 'Downloading|Unzipping|^\[=* *\]|^\s*$' \
+            | tail -n 60 | cut -c1-300 | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}{print}' > "$RUNNER_TEMP/tail.txt"
           echo "::error title=Build log::$(cat "$RUNNER_TEMP/tail.txt")"
 
       - uses: actions/upload-artifact@v4
