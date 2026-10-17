@@ -60,10 +60,11 @@ jobs:
           flutter build apk --release \
             --build-name=0.1.${{ github.run_number }} \
             --build-number=${{ github.run_number }}
-          # Report whether the shrinker kept the shared_preferences entry point.
+          # Report whether the shrinker kept the shared_preferences entry point (never fails the build).
+          set +o pipefail
           MAP=build/app/outputs/mapping/release/mapping.txt
           if [ -f "$MAP" ]; then
-            KEPT=$(grep -A80 "SharedPreferencesApiRegistrar ->" "$MAP" | grep -m3 "getAll" | tr '\n' ' ')
+            KEPT=$(awk '/SharedPreferencesApiRegistrar ->/{f=1;n=0} f&&/getAll/{printf "%s ", $0; c++} f{n++} n>80{f=0} c>=3{exit}' "$MAP" || true)
             echo "::warning title=shrinker check::SharedPreferencesApiRegistrar getAll: ${KEPT:-NOT FOUND in mapping}"
           else
             echo "::warning title=shrinker check::no mapping file (shrinking off?)"
