@@ -102,23 +102,24 @@ class NetworkTests(unittest.TestCase):
         self.assertTrue(r["led_controller_moved"])
         self.assertTrue(r["hotspot_ssid"].startswith("SyncLight-"))
         self.assertEqual(len(r["hotspot_password"]), 16)
-        # The ESP was told to join the hotspot with a fixed address, then rebooted.
+        # The ESP was told to join the hotspot (DHCP), then rebooted.
         cfg_post = self.wled.posts[self.wled.paths.index("/json/cfg")]
         entry = cfg_post["nw"]["ins"][0]
         self.assertEqual((entry["ssid"], entry["psk"]), (r["hotspot_ssid"], r["hotspot_password"]))
-        self.assertEqual(entry["ip"], [192, 168, 4, 2])
+        self.assertEqual(entry["ip"], [0, 0, 0, 0])
+        self.assertEqual(cfg_post["id"]["mdns"], "synclight-led")
+        self.assertEqual(self.service.state.data["network"]["led_mac"], "c82b96230272")
         self.assertEqual(self.wled.posts[-1], {"rb": True})
         self.wait_switch()
         self.assertEqual(nm.active, HOTSPOT_CON)
         self.assertEqual(nm.profiles[HOTSPOT_CON]["connection.autoconnect-priority"], "100")
         self.assertEqual(nm.profiles[HOTSPOT_CON]["wifi-sec.pmf"], "disable")
-        self.assertEqual(self.service.wled.host, "192.168.4.2")
+        self.assertEqual(self.service.wled.host, self.cfg["wled"]["host"])  # found by name, not a fixed IP
         self.assertEqual(self.service.status()["network"]["mode"], "hotspot")
         # Same password next time.
         self.assertEqual(self.service._hotspot_credentials()[1], r["hotspot_password"])
 
         # Back to home Wi-Fi: the ESP gets the home network (password read from NetworkManager).
-        self.service.wled.use_host(f"127.0.0.1:{self.wled.port}")  # pretend the ESP is reachable on the hotspot
         n_posts = len(self.wled.posts)
         r = self.service.net_use_home()
         self.assertTrue(r["led_controller_moved"])
@@ -145,6 +146,22 @@ class NetworkTests(unittest.TestCase):
             self.service.net_use_hotspot()
         self.assertEqual(ctx.exception.code, "busy")
         self.service.calibrate_stop()
+
+    def test_lease_lookup(self):
+        from synclight_agent.netmgr import lookup_lease
+        path = os.path.join(self.tmp.name, "leases")
+        with open(path, "w") as fh:
+            fh.write("1792260000 f2:25:cd:b6:fb:3a 192.168.4.57 MacBook 01:f2:25:cd:b6:fb:3a\n")
+            fh.write("1792260000 c8:2b:96:23:02:72 192.168.4.83 synclight-led *\n")
+        self.assertEqual(lookup_lease("c82b96230272", path), "192.168.4.83")
+        self.assertEqual(lookup_lease("C8:2B:96:23:02:72", path), "192.168.4.83")
+        self.assertIsNone(lookup_lease("aabbccddeeff", path))
+        self.assertIsNone(lookup_lease(None, path))
+
+    def test_name_falls_back_to_lease(self):
+        self.service.wled.use_host("no-such-host.invalid")
+        self.service.wled.fallback_lookup = lambda: "127.0.0.1"
+        self.assertEqual(self.service.wled.resolve(), "127.0.0.1")
 
     def test_sync_led_host(self):
         self.service.sync_led_host()

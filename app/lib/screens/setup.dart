@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../theme.dart';
+import '../widgets/fx.dart';
 import '../widgets/tv_diagram.dart';
 
 /// TV setup wizard: size -> install guide -> find corners -> check colors -> done.
@@ -184,26 +186,64 @@ class _SetupScreenState extends State<SetupScreen> {
       });
 
   // ---- UI -----------------------------------------------------------------------------
+  static const _titles = ['Your TV', 'Install the strip', 'Find the corners', 'Check the colors', 'All set'];
+
   @override
   Widget build(BuildContext context) {
-    final titles = ['Your TV', 'Install the strip', 'Find the corners', 'Check the colors', 'All set'];
     return Scaffold(
-      appBar: AppBar(title: Text(titles[_step])),
+      appBar: AppBar(title: Text(_titles[_step])),
       body: SafeArea(
         child: Column(
           children: [
-            LinearProgressIndicator(value: (_step + 1) / titles.length),
-            if (_busy) const LinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(children: [
+                for (var i = 0; i < _titles.length; i++)
+                  Expanded(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOutCubic,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(2),
+                        color: i <= _step ? Colors.white : SL.border,
+                      ),
+                    ),
+                  ),
+              ]),
+            ),
+            AnimatedOpacity(
+              opacity: _busy ? 1 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: const Padding(
+                padding: EdgeInsets.fromLTRB(20, 6, 20, 0),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            ),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: switch (_step) {
-                  0 => _sizeStep(context),
-                  1 => _installStep(context),
-                  2 => _cornerStep(context),
-                  3 => _verifyStep(context),
-                  _ => _doneStep(context),
-                },
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 380),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, a) => FadeTransition(
+                  opacity: a,
+                  child: SlideTransition(
+                    position: Tween(begin: const Offset(0.08, 0), end: Offset.zero).animate(a),
+                    child: child,
+                  ),
+                ),
+                child: ListView(
+                  key: ValueKey(_step),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  children: switch (_step) {
+                    0 => _sizeStep(),
+                    1 => _installStep(),
+                    2 => _cornerStep(),
+                    3 => _verifyStep(),
+                    _ => _doneStep(),
+                  },
+                ),
               ),
             ),
           ],
@@ -212,14 +252,20 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  List<Widget> _sizeStep(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+  Widget _h(String text) => Text(text,
+      style: const TextStyle(color: SL.text, fontSize: 24, fontWeight: FontWeight.w700, letterSpacing: -0.4));
+
+  Widget _p(String text) => Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Text(text, style: const TextStyle(color: SL.muted, fontSize: 15, height: 1.35)),
+      );
+
+  List<Widget> _sizeStep() {
     return [
-      Text('How big is your TV?', style: t.titleLarge),
-      const SizedBox(height: 4),
-      Text('Measured corner to corner, as on the box.', style: t.bodyMedium),
-      const SizedBox(height: 16),
-      Center(child: Text('${_inches.round()}"', style: t.displayMedium)),
+      FadeSlideIn(child: _h('How big is your TV?')),
+      FadeSlideIn(delay: const Duration(milliseconds: 60), child: _p('Measured corner to corner, as written on its box.')),
+      const SizedBox(height: 12),
+      FadeSlideIn(delay: const Duration(milliseconds: 120), child: TvSizePreview(inches: _inches)),
       Slider(
         value: _inches,
         min: 32,
@@ -228,116 +274,155 @@ class _SetupScreenState extends State<SetupScreen> {
         label: '${_inches.round()}"',
         onChanged: (v) => setState(() => _inches = v),
       ),
-      const SizedBox(height: 16),
-      Text('LEDs per meter on your strip', style: t.titleMedium),
-      const SizedBox(height: 4),
-      Text('Printed on the strip or its box. SyncLight kits use 60.', style: t.bodySmall),
-      const SizedBox(height: 8),
+      const SectionLabel('LEDs per meter on your strip'),
       Wrap(spacing: 8, children: [
         for (final d in [30, 60, 144])
-          ChoiceChip(label: Text('$d / m'), selected: _density == d, onSelected: (_) => setState(() => _density = d)),
+          ChoiceChip(
+            label: Text('$d / m', style: TextStyle(color: _density == d ? Colors.black : SL.text)),
+            selected: _density == d,
+            showCheckmark: false,
+            onSelected: (_) => setState(() => _density = d),
+          ),
       ]),
-      const SizedBox(height: 32),
+      _p('Printed on the strip or its box. SyncLight kits use 60.'),
+      const SizedBox(height: 28),
       FilledButton(onPressed: _busy ? null : _toInstall, child: const Text('Next')),
     ];
   }
 
-  List<Widget> _installStep(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+  List<Widget> _installStep() {
     final s = _suggest ?? const {};
     final need = ((s['total'] ?? 0) as num).toInt();
-    final lengths = (s['side_length_cm'] as Map?) ?? const {};
     final spare = _ledCount - need;
     return [
-      TvBackDiagram(counts: _counts),
-      const SizedBox(height: 16),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
+      FadeSlideIn(child: TvInstallAnimation(counts: _counts)),
+      const SizedBox(height: 18),
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 100),
+        child: SLCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Your TV needs about $need LEDs (${s['strip_length_m'] ?? '?'} m of strip).', style: t.titleSmall),
-            const SizedBox(height: 6),
+            Row(children: [
+              const Icon(Icons.straighten, color: SL.muted, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('About $need LEDs  ·  ${s['strip_length_m'] ?? '?'} m of strip',
+                    style: const TextStyle(color: SL.text, fontWeight: FontWeight.w600)),
+              ),
+            ]),
             if (_ledCount > 0 && spare > 0)
-              Text('Your strip has $_ledCount LEDs, so about $spare will be left over at the end. '
+              _p('Your strip has $_ledCount LEDs, so about $spare will be left at the end. '
                   'Cut them off at a cut mark, or tuck them behind the TV — they stay off.'),
             if (_ledCount > 0 && spare < 0)
-              Text('Your strip has $_ledCount LEDs, a little short. Stick it as far as it goes — '
+              _p('Your strip has $_ledCount LEDs, a little short. Stick it as far as it goes — '
                   'the next step adjusts to what you have.'),
           ]),
         ),
       ),
-      const SizedBox(height: 8),
-      _instruction(1, 'Wipe the back edges of the TV with a dry cloth.'),
-      _instruction(2, 'Stand BEHIND the TV. Start at the corner marked START — the bottom-right corner from behind '
-          '(bottom-left when you face the screen) — about ${s['inset_cm'] ?? 3} cm in from the edge, with the wire end there.'),
-      _instruction(3, 'Go up that side (about ${lengths['left_right'] ?? '?'} cm), across the top '
-          '(about ${lengths['top_bottom'] ?? '?'} cm), down the other side and along the bottom, following the arrows.'),
-      _instruction(4, 'At corners, curve the strip gently. Never fold it flat — that breaks it.'),
-      _instruction(5, 'Plug the strip into the SyncLight box and make sure it has power.'),
+      const SizedBox(height: 10),
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 160),
+        child: SLCard(
+          child: Column(children: [
+            _tip(Icons.cleaning_services_outlined, 'Wipe the back edges of the TV with a dry cloth first.'),
+            _tip(Icons.power_outlined, 'When it\'s on, plug the strip into the SyncLight box.'),
+          ]),
+        ),
+      ),
       const SizedBox(height: 24),
       FilledButton(onPressed: _busy ? null : _toCorners, child: const Text('The strip is on the TV')),
+      const SizedBox(height: 4),
       TextButton(onPressed: () => setState(() => _step = 0), child: const Text('Back')),
     ];
   }
 
-  Widget _instruction(int n, String text) => Padding(
+  Widget _tip(IconData icon, String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          CircleAvatar(radius: 13, child: Text('$n', style: const TextStyle(fontSize: 13))),
+          Icon(icon, color: SL.muted, size: 20),
           const SizedBox(width: 12),
-          Expanded(child: Text(text)),
+          Expanded(child: Text(text, style: const TextStyle(color: SL.text))),
         ]),
       );
 
-  List<Widget> _cornerStep(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+  List<Widget> _cornerStep() {
     final k = _marks.length.clamp(0, _cornerPrompts.length - 1);
     final (title, help) = _cornerPrompts[k];
     final min = _marks.isEmpty ? 0 : _marks.last;
     final max = (_ledCount > 0 ? _ledCount : 1000) - 1;
     final cursor = _cursor.clamp(min, max);
+    final nudgeStyle = OutlinedButton.styleFrom(minimumSize: const Size(56, 46), padding: EdgeInsets.zero);
+    Widget nudge(String label, int target) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: OutlinedButton(
+            style: nudgeStyle,
+            onPressed: target < min || target > max ? null : () => _moveCursor(target),
+            child: Text(label),
+          ),
+        );
     return [
       Row(children: [
         for (var i = 0; i < _cornerPrompts.length; i++)
           Expanded(
-            child: Container(
-              height: 6,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              height: 28,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              alignment: Alignment.center,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(3),
-                color: i < _marks.length
-                    ? Theme.of(context).colorScheme.primary
-                    : i == _marks.length
-                        ? Theme.of(context).colorScheme.primary.withAlpha(110)
-                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+                color: i < _marks.length ? Colors.white : (i == _marks.length ? SL.cardHigh : SL.card),
+                border: Border.all(color: i == _marks.length ? Colors.white : SL.border),
               ),
+              child: i < _marks.length
+                  ? const Icon(Icons.check, size: 16, color: Colors.black)
+                  : Text('${i + 1}', style: TextStyle(color: i == _marks.length ? SL.text : SL.faint, fontSize: 12)),
             ),
           ),
       ]),
-      const SizedBox(height: 20),
-      Text('Step ${k + 1} of ${_cornerPrompts.length}: $title', style: t.titleLarge),
-      const SizedBox(height: 8),
-      Text(help),
-      const SizedBox(height: 6),
-      Text('Corners you already marked glow red.', style: t.bodySmall),
-      const SizedBox(height: 24),
-      Center(child: Text('LED ${cursor + 1}', style: t.displaySmall)),
-      if (max > min)
-        Slider(
-          value: cursor.toDouble(),
-          min: min.toDouble(),
-          max: max.toDouble(),
-          divisions: max - min,
-          onChanged: (v) => _moveCursor(v.round()),
+      const SizedBox(height: 22),
+      AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: Column(
+          key: ValueKey(k),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [_h(title), _p(help)],
         ),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        _nudge('-10', cursor - 10, min, max),
-        _nudge('-1', cursor - 1, min, max),
-        const SizedBox(width: 12),
-        _nudge('+1', cursor + 1, min, max),
-        _nudge('+10', cursor + 10, min, max),
-      ]),
-      const SizedBox(height: 24),
+      ),
+      _p('Corners you already marked glow red on the strip.'),
+      const SizedBox(height: 22),
+      SLCard(
+        padding: const EdgeInsets.fromLTRB(0, 18, 0, 10),
+        child: Column(children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
+            child: Text('LED ${cursor + 1}',
+                key: ValueKey(cursor),
+                style: const TextStyle(color: SL.text, fontSize: 34, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(height: 8),
+          StripCursor(ledCount: _ledCount, cursor: cursor, marks: List<int>.from(_marks)),
+          if (max > min)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Slider(
+                value: cursor.toDouble(),
+                min: min.toDouble(),
+                max: max.toDouble(),
+                divisions: max - min,
+                onChanged: (v) => _moveCursor(v.round()),
+              ),
+            ),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            nudge('-10', cursor - 10),
+            nudge('-1', cursor - 1),
+            const SizedBox(width: 10),
+            nudge('+1', cursor + 1),
+            nudge('+10', cursor + 10),
+          ]),
+        ]),
+      ),
+      const SizedBox(height: 20),
       FilledButton.icon(
         onPressed: _busy ? null : _markCorner,
         icon: const Icon(Icons.check),
@@ -345,7 +430,7 @@ class _SetupScreenState extends State<SetupScreen> {
       ),
       if (_marks.isNotEmpty)
         TextButton.icon(onPressed: _undoCorner, icon: const Icon(Icons.undo), label: const Text('Undo last corner')),
-      const Divider(height: 40),
+      const Divider(height: 36),
       TextButton(
         onPressed: _busy ? null : _useMeasured,
         child: const Text('Skip — use the measured numbers instead'),
@@ -353,48 +438,68 @@ class _SetupScreenState extends State<SetupScreen> {
     ];
   }
 
-  Widget _nudge(String label, int target, int min, int max) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: OutlinedButton(
-          onPressed: target < min || target > max ? null : () => _moveCursor(target),
-          child: Text(label),
-        ),
-      );
-
-  List<Widget> _verifyStep(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    Widget row(String side, String label) => ListTile(
-          leading: CircleAvatar(backgroundColor: sideColors[side]),
-          title: Text(label),
+  List<Widget> _verifyStep() {
+    Widget row(String side, String label) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(children: [
+            Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: sideColors[side],
+                boxShadow: [BoxShadow(color: sideColors[side]!.withAlpha(140), blurRadius: 10)],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(label, style: const TextStyle(color: SL.text, fontSize: 15)),
+          ]),
         );
     return [
-      Text('Look at the strip from the front of the TV.', style: t.titleLarge),
-      const SizedBox(height: 8),
-      const Text('Each edge should glow its own color:'),
-      const SizedBox(height: 8),
-      row('left', 'Left edge — red'),
-      row('top', 'Top edge — green'),
-      row('right', 'Right edge — blue'),
-      row('bottom', 'Bottom edge — yellow'),
-      const SizedBox(height: 8),
-      const Text('A color spilling around a corner means a corner is off by a few LEDs.'),
+      FadeSlideIn(child: _h('Look at the TV from the front')),
+      FadeSlideIn(delay: const Duration(milliseconds: 60), child: _p('Each edge should glow its own color, like this:')),
+      const SizedBox(height: 14),
+      const FadeSlideIn(delay: Duration(milliseconds: 120), child: TvSidesPreview()),
+      const SizedBox(height: 14),
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 180),
+        child: SLCard(
+          child: Column(children: [
+            row('left', 'Left edge — red'),
+            row('top', 'Top edge — green'),
+            row('right', 'Right edge — blue'),
+            row('bottom', 'Bottom edge — yellow'),
+          ]),
+        ),
+      ),
+      _p('A color spilling around a corner means a corner is off by a few LEDs.'),
       const SizedBox(height: 24),
       FilledButton(onPressed: _busy ? null : _save, child: const Text('Looks right — save')),
+      const SizedBox(height: 4),
       TextButton(onPressed: _busy ? null : _redoCorners, child: const Text('Something is off — redo the corners')),
     ];
   }
 
-  List<Widget> _doneStep(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+  List<Widget> _doneStep() {
     return [
-      const SizedBox(height: 24),
-      Icon(Icons.check_circle, size: 96, color: Theme.of(context).colorScheme.primary),
-      const SizedBox(height: 16),
-      Text('Your TV is set up!', textAlign: TextAlign.center, style: t.headlineSmall),
-      const SizedBox(height: 8),
-      const Text('Play something on the TV and the light will follow the picture.', textAlign: TextAlign.center),
-      const SizedBox(height: 32),
+      const SizedBox(height: 30),
+      const FadeSlideIn(
+        child: Center(child: RgbRing(size: 170, thickness: 7, seconds: 3, child: Icon(Icons.check_rounded, size: 70, color: SL.text))),
+      ),
+      const SizedBox(height: 20),
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 150),
+        child: Text('Your TV is set up!', textAlign: TextAlign.center,
+            style: const TextStyle(color: SL.text, fontSize: 26, fontWeight: FontWeight.w700)),
+      ),
+      FadeSlideIn(
+        delay: const Duration(milliseconds: 250),
+        child: Text('Play something on the TV and the light will follow the picture.',
+            textAlign: TextAlign.center, style: const TextStyle(color: SL.muted, fontSize: 15)),
+      ),
+      const SizedBox(height: 36),
       FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Done')),
+      const MadeBy(),
     ];
   }
 }

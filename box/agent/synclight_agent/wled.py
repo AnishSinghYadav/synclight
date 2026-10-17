@@ -21,13 +21,17 @@ class WledClient:
         self._port = int(port) if port else 80
         self.timeout = timeout
         self._ip = None
+        self.fallback_lookup = None  # optional callable returning an IP when the name doesn't resolve
 
     def _resolve(self, refresh=False):
         if self._ip is None or refresh:
             try:
                 self._ip = socket.getaddrinfo(self._name, self._port, socket.AF_INET)[0][4][0]
             except OSError as exc:
-                raise WledUnavailable(f"cannot resolve {self.host}: {exc}") from exc
+                ip = self.fallback_lookup() if self.fallback_lookup else None
+                if not ip:
+                    raise WledUnavailable(f"cannot resolve {self.host}: {exc}") from exc
+                self._ip = ip
         return self._ip
 
     def _request(self, path, body=None, timeout=None, retry=True):

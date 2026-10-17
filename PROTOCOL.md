@@ -122,7 +122,8 @@ Layout args can be given in either of two forms:
 
 ### Network (private Wi-Fi)
 The box normally runs its own Wi-Fi ("SyncLight-XXXX", 192.168.4.1/24) that only the LED
-controller joins (fixed address 192.168.4.2). Home Wi-Fi is kept as a fallback and for development.
+controller joins (DHCP; the box finds it as `synclight-led.local`, or by MAC in the DHCP leases).
+Home Wi-Fi is kept as a fallback and for development.
 
 | cmd | args | data |
 |---|---|---|

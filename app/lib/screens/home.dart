@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../theme.dart';
 import '../widgets/color_picker.dart';
+import '../widgets/fx.dart';
 import 'connect.dart';
 import 'network.dart';
 import 'setup.dart';
@@ -118,9 +120,20 @@ class _HomeScreenState extends State<HomeScreen> {
     _poll = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
   }
 
+  void _openNetwork() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => NetworkScreen(api: api)));
+  }
+
+  Color get _previewColor => rgbColor(_color);
+
+  String get _modeLabel => switch (_mode) {
+        'color' => 'Solid color',
+        'effect' => _effect ?? 'Effect',
+        _ => 'TV sync',
+      };
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final s = _status;
     final hyp = (s?['hyperion'] as Map?) ?? {};
     final wled = (s?['wled'] as Map?) ?? {};
@@ -129,60 +142,101 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(s?['name'] == null ? 'SyncLight' : 'SyncLight · ${s!['name']}'),
+        titleSpacing: 16,
+        title: Row(children: [
+          const RgbRing(size: 30, thickness: 2.5, glow: false, seconds: 5),
+          const SizedBox(width: 10),
+          Flexible(child: Text(api.label, overflow: TextOverflow.ellipsis)),
+        ]),
         actions: [
-          IconButton(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => NetworkScreen(api: api))),
-            icon: const Icon(Icons.router),
-            tooltip: 'Box network',
-          ),
-          IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
+          IconButton(onPressed: _openNetwork, icon: const Icon(Icons.router_outlined), tooltip: 'Box network'),
           IconButton(onPressed: _switchBox, icon: const Icon(Icons.swap_horiz), tooltip: 'Other box'),
         ],
       ),
       body: RefreshIndicator(
+        color: Colors.black,
+        backgroundColor: Colors.white,
         onRefresh: _refresh,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
           children: [
-            if (_error != null)
-              Card(
-                color: theme.colorScheme.errorContainer,
-                child: ListTile(
-                  leading: Icon(Icons.wifi_off, color: theme.colorScheme.onErrorContainer),
-                  title: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
-                ),
-              ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              child: _error == null
+                  ? const SizedBox(width: double.infinity)
+                  : Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: SLCard(
+                        color: const Color(0xFF2A1215),
+                        child: Row(children: [
+                          const Icon(Icons.cloud_off, color: SL.bad),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(_error!, style: const TextStyle(color: Color(0xFFFFC9CB)))),
+                        ]),
+                      ),
+                    ),
+            ),
             if (s != null && layout == null)
-              Card(
-                color: theme.colorScheme.primaryContainer,
-                child: ListTile(
-                  leading: const Icon(Icons.tv),
-                  title: const Text('Set up your TV'),
-                  subtitle: const Text('Tell SyncLight where the strip is so the colors match the screen.'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _openSetup,
+              FadeSlideIn(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: SLCard(
+                    onTap: _openSetup,
+                    child: Row(children: [
+                      const RgbRing(size: 44, thickness: 2.5, child: Icon(Icons.tv, size: 20, color: SL.text)),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('Set up your TV', style: TextStyle(color: SL.text, fontSize: 16, fontWeight: FontWeight.w600)),
+                          SizedBox(height: 2),
+                          Text('A 2-minute guided setup so colors match the screen.',
+                              style: TextStyle(color: SL.muted, fontSize: 13)),
+                        ]),
+                      ),
+                      const Icon(Icons.chevron_right, color: SL.faint),
+                    ]),
+                  ),
                 ),
               ),
-            // Power + brightness
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text('Lights', style: theme.textTheme.titleMedium),
-                      subtitle: Text(_power ? 'On' : 'Off'),
-                      value: _power,
-                      onChanged: (v) {
-                        setState(() => _power = v);
-                        _send('light.power', {'on': v});
+
+            // Hero: light preview + power.
+            FadeSlideIn(
+              child: SLCard(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+                child: Column(children: [
+                  GlowOrb(
+                    color: _previewColor,
+                    rainbow: _mode != 'color',
+                    on: _power,
+                    brightness: _brightness / 100,
+                    size: 130,
+                  ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: Text(
+                      _power ? _modeLabel : 'Lights off',
+                      key: ValueKey('${_power}_$_modeLabel'),
+                      style: const TextStyle(color: SL.text, fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.3),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _power ? 'Brightness ${_brightness.round()}%' : 'Tap the power button to turn on',
+                    style: const TextStyle(color: SL.muted),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(children: [
+                    _PowerButton(
+                      on: _power,
+                      onTap: () {
+                        setState(() => _power = !_power);
+                        _send('light.power', {'on': _power});
                       },
                     ),
-                    Row(
-                      children: [
-                        const Icon(Icons.brightness_low),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Row(children: [
+                        const Icon(Icons.brightness_low, color: SL.muted, size: 20),
                         Expanded(
                           child: Slider(
                             value: _brightness.clamp(0, 100),
@@ -198,113 +252,260 @@ class _HomeScreenState extends State<HomeScreen> {
                             },
                           ),
                         ),
-                        const Icon(Icons.brightness_high),
-                      ],
+                        const Icon(Icons.brightness_high, color: SL.muted, size: 20),
+                      ]),
                     ),
-                  ],
-                ),
+                  ]),
+                ]),
               ),
             ),
-            const SizedBox(height: 8),
-            // Mode
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Mode', style: theme.textTheme.titleMedium),
-                    const SizedBox(height: 12),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'sync', icon: Icon(Icons.tv), label: Text('TV sync')),
-                        ButtonSegment(value: 'color', icon: Icon(Icons.palette), label: Text('Color')),
-                        ButtonSegment(value: 'effect', icon: Icon(Icons.auto_awesome), label: Text('Effect')),
-                      ],
-                      selected: {_mode},
-                      onSelectionChanged: (v) => _setMode(v.first),
+
+            // Mode.
+            const FadeSlideIn(delay: Duration(milliseconds: 80), child: SectionLabel('Mode')),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 120),
+              child: SLCard(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  _ModeSwitch(value: _mode, onChanged: _setMode),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      transitionBuilder: (child, a) => FadeTransition(
+                        opacity: a,
+                        child: SlideTransition(
+                          position: Tween(begin: const Offset(0, 0.05), end: Offset.zero).animate(a),
+                          child: child,
+                        ),
+                      ),
+                      child: Padding(
+                        key: ValueKey(_mode),
+                        padding: const EdgeInsets.only(top: 16),
+                        child: _modeBody(hyp),
+                      ),
                     ),
-                    const SizedBox(height: 16),
-                    if (_mode == 'sync')
-                      Text(
-                        hyp['capture_active'] == true
-                            ? 'The strip follows the picture on your TV.'
-                            : 'Waiting for a picture from the HDMI capture.',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    if (_mode == 'color')
-                      ColorPicker(
-                        color: _color,
-                        onChanged: (c) {
-                          setState(() => _color = c);
-                          _send('light.mode', {'mode': 'color', 'color': c});
-                        },
-                      ),
-                    if (_mode == 'effect')
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          if (_effects.isEmpty) const Text('Loading effects…'),
-                          for (final e in _effects)
-                            ChoiceChip(
-                              label: Text(e),
-                              selected: e == _effect,
-                              onSelected: (_) {
-                                setState(() => _effect = e);
-                                _send('light.mode', {'mode': 'effect', 'effect': e});
-                              },
-                            ),
-                        ],
-                      ),
-                  ],
-                ),
+                  ),
+                ]),
               ),
             ),
-            const SizedBox(height: 8),
-            // Status
-            Card(
-              child: Column(
-                children: [
-                  _statusRow(Icons.memory, 'Light engine', hyp['reachable'] == true,
-                      hyp['reachable'] == true ? 'Running' : 'Not responding'),
-                  _statusRow(Icons.lightbulb, 'LED controller', wled['reachable'] == true,
-                      wled['reachable'] == true ? '${wled['led_count'] ?? '?'} LEDs' : 'Not responding'),
-                  _statusRow(Icons.settings_input_hdmi, 'HDMI picture', hyp['capture_active'] == true,
-                      hyp['capture_active'] == true ? 'Receiving' : 'No signal'),
-                  _statusRow(
-                      Icons.router,
-                      'Box network',
-                      net['error'] == null,
-                      net['switching'] == true
-                          ? 'Switching…'
-                          : net['mode'] == 'hotspot'
-                              ? 'Private Wi-Fi'
-                              : 'Home Wi-Fi (developer)'),
-                  _statusRow(Icons.tv, 'TV setup', layout != null,
-                      layout != null ? '${(layout as Map)['total']} LEDs placed' : 'Not done yet'),
-                ],
+
+            // Status.
+            const FadeSlideIn(delay: Duration(milliseconds: 160), child: SectionLabel('Status')),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 200),
+              child: LayoutBuilder(builder: (context, c) {
+                final w = (c.maxWidth - 10) / 2;
+                return Wrap(spacing: 10, runSpacing: 10, children: [
+                  _StatusTile(width: w, icon: Icons.memory, title: 'Light engine', ok: hyp['reachable'] == true,
+                      detail: hyp['reachable'] == true ? 'Running' : 'Not responding'),
+                  _StatusTile(width: w, icon: Icons.lightbulb_outline, title: 'LED controller', ok: wled['reachable'] == true,
+                      detail: wled['reachable'] == true ? '${wled['led_count'] ?? '?'} LEDs' : 'Not reachable'),
+                  _StatusTile(width: w, icon: Icons.settings_input_hdmi, title: 'HDMI', ok: hyp['capture_active'] == true,
+                      detail: hyp['capture_active'] == true ? 'Receiving picture' : 'No signal'),
+                  _StatusTile(
+                    width: w,
+                    icon: Icons.router_outlined,
+                    title: 'Network',
+                    ok: net['error'] == null,
+                    detail: net['switching'] == true
+                        ? 'Switching…'
+                        : net['mode'] == 'hotspot'
+                            ? 'Private Wi-Fi'
+                            : 'Home Wi-Fi',
+                    onTap: _openNetwork,
+                  ),
+                ]);
+              }),
+            ),
+            const SizedBox(height: 18),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 240),
+              child: FilledButton.icon(
+                onPressed: _openSetup,
+                icon: const Icon(Icons.straighten),
+                label: Text(layout == null ? 'Set up TV' : 'Redo TV setup'),
               ),
             ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _openSetup,
-              icon: const Icon(Icons.straighten),
-              label: Text(layout == null ? 'Set up TV' : 'Redo TV setup'),
-            ),
+            const MadeBy(),
           ],
         ),
       ),
     );
   }
 
-  Widget _statusRow(IconData icon, String title, bool ok, String detail) {
-    final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(detail),
-      trailing: Icon(ok ? Icons.check_circle : Icons.error_outline, color: ok ? Colors.green : scheme.error),
+  Widget _modeBody(Map hyp) {
+    switch (_mode) {
+      case 'color':
+        return ColorPicker(
+          color: _color,
+          onChanged: (c) {
+            setState(() => _color = c);
+            _send('light.mode', {'mode': 'color', 'color': c});
+          },
+        );
+      case 'effect':
+        if (_effects.isEmpty) {
+          return const Text('Loading effects…', style: TextStyle(color: SL.muted));
+        }
+        return Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final e in _effects)
+            ChoiceChip(
+              label: Text(e, style: TextStyle(color: e == _effect ? Colors.black : SL.text)),
+              selected: e == _effect,
+              showCheckmark: false,
+              onSelected: (_) {
+                setState(() => _effect = e);
+                _send('light.mode', {'mode': 'effect', 'effect': e});
+              },
+            ),
+        ]);
+      default:
+        final live = hyp['capture_active'] == true;
+        return Row(children: [
+          PulseDot(color: live ? SL.good : SL.warn, size: 8),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              live ? 'Following the picture on your TV.' : 'Waiting for a picture from the HDMI input.',
+              style: const TextStyle(color: SL.muted),
+            ),
+          ),
+        ]);
+    }
+  }
+}
+
+class _PowerButton extends StatelessWidget {
+  const _PowerButton({required this.on, required this.onTap});
+
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        width: 58,
+        height: 58,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: on ? Colors.white : SL.cardHigh,
+          boxShadow: on ? [BoxShadow(color: Colors.white.withAlpha(60), blurRadius: 18, spreadRadius: 1)] : const [],
+        ),
+        child: Icon(Icons.power_settings_new, color: on ? Colors.black : SL.muted, size: 28),
+      ),
+    );
+  }
+}
+
+class _ModeSwitch extends StatelessWidget {
+  const _ModeSwitch({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  static const _modes = [
+    ('sync', Icons.tv, 'TV sync'),
+    ('color', Icons.palette_outlined, 'Color'),
+    ('effect', Icons.auto_awesome, 'Effect'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final index = _modes.indexWhere((m) => m.$1 == value).clamp(0, 2);
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: SL.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: SL.border)),
+      child: Stack(fit: StackFit.expand, children: [
+        AnimatedAlign(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment(-1 + index * 1.0, 0),
+          child: FractionallySizedBox(
+            widthFactor: 1 / 3,
+            child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10))),
+          ),
+        ),
+        Row(children: [
+          for (final m in _modes)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onChanged(m.$1),
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 200),
+                  style: TextStyle(
+                    color: m.$1 == value ? Colors.black : SL.muted,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(m.$2, size: 18, color: m.$1 == value ? Colors.black : SL.muted),
+                    const SizedBox(width: 6),
+                    Text(m.$3),
+                  ]),
+                ),
+              ),
+            ),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _StatusTile extends StatelessWidget {
+  const _StatusTile({
+    required this.width,
+    required this.icon,
+    required this.title,
+    required this.ok,
+    required this.detail,
+    this.onTap,
+  });
+
+  final double width;
+  final IconData icon;
+  final String title;
+  final bool ok;
+  final String detail;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: SLCard(
+        onTap: onTap,
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(icon, size: 20, color: SL.muted),
+            const Spacer(),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: ok ? SL.good : SL.bad,
+                boxShadow: [BoxShadow(color: (ok ? SL.good : SL.bad).withAlpha(120), blurRadius: 8)],
+              ),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          Text(title, style: const TextStyle(color: SL.text, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: Text(detail, key: ValueKey(detail), style: const TextStyle(color: SL.muted, fontSize: 13)),
+          ),
+        ]),
+      ),
     );
   }
 }

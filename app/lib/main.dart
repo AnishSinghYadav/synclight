@@ -1,27 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'screens/connect.dart';
+import 'theme.dart';
 
-void main() => runApp(const SyncLightApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: SL.bg,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
+  runApp(const SyncLightApp());
+}
 
 class SyncLightApp extends StatelessWidget {
   const SyncLightApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFFFF7A1A);
     return MaterialApp(
       title: 'SyncLight',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: seed),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
-        useMaterial3: true,
-      ),
-      themeMode: ThemeMode.system,
+      theme: buildTheme(),
+      darkTheme: buildTheme(),
+      themeMode: ThemeMode.dark,
       home: const ConnectScreen(),
     );
   }

@@ -12,8 +12,24 @@ log = logging.getLogger(__name__)
 
 HOTSPOT_CON = "synclight-ap"
 HOTSPOT_IP = "192.168.4.1"
-LED_STATIC_IP = "192.168.4.2"
 WIFI_IFACE = "wlan0"
+LEASES_FILE = "/var/lib/NetworkManager/dnsmasq-wlan0.leases"
+
+
+def lookup_lease(mac, path=LEASES_FILE):
+    """IP handed out by the hotspot's DHCP server to this MAC (any format), or None."""
+    if not mac:
+        return None
+    want = mac.replace(":", "").replace("-", "").lower()
+    try:
+        with open(path) as fh:
+            for line in fh:
+                parts = line.split()  # expiry mac ip hostname client-id
+                if len(parts) >= 3 and parts[1].replace(":", "").lower() == want:
+                    return parts[2]
+    except OSError:
+        return None
+    return None
 
 
 class NetError(Exception):

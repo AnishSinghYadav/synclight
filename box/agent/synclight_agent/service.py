@@ -7,7 +7,7 @@ import time
 
 from . import __version__, layout
 from .hyperion import HyperionAuthError, HyperionClient, HyperionError, HyperionUnavailable
-from .netmgr import HOTSPOT_IP, LED_STATIC_IP, NetError, NetManager
+from .netmgr import HOTSPOT_IP, NetError, NetManager, lookup_lease
 from .wled import WledClient, WledUnavailable
 
 log = logging.getLogger(__name__)
@@ -50,8 +50,8 @@ class SyncLightService:
         self._switching = False
         self._net_error = None
         self._hyperion_led_host = None
-        if (self.state.data.get("network") or {}).get("mode") == "hotspot":
-            self.wled.use_host(LED_STATIC_IP)
+        # If the ESP's name doesn't resolve, look it up by MAC address in the hotspot's DHCP leases.
+        self.wled.fallback_lookup = lambda: lookup_lease((self.state.data.get("network") or {}).get("led_mac"))
 
     # ---- helpers ----------------------------------------------------------------------
     def _call(self, fn, *args):
@@ -304,15 +304,12 @@ class SyncLightService:
         try:
             if mode == "hotspot":
                 if self.net.activate_hotspot(home):
-                    self.wled.use_host(LED_STATIC_IP)
                     log.info("Now running the private hotspot")
                 else:
                     net["mode"] = "home"
-                    self.wled.use_host(self._default_wled_host)
                     self._net_error = "The private Wi-Fi did not start, so the box went back to home Wi-Fi."
             else:
                 self.net.activate_home(home)
-                self.wled.use_host(self._default_wled_host)
                 log.info("Now on home Wi-Fi (%s)", home)
             self._hyperion_led_host = None  # re-check where the LED controller is
             self.state.save()
@@ -322,9 +319,12 @@ class SyncLightService:
         finally:
             self._switching = False
 
-    def _move_led_controller(self, ssid, psk, static_ip=None, gateway=None):
+    def _move_led_controller(self, ssid, psk):
         try:
-            self.wled.set_wifi(ssid, psk, static_ip, gateway)
+            mac = (self.wled.info().get("mac") or "").lower()
+            if mac:
+                self._net_state()["led_mac"] = mac
+            self.wled.set_wifi(ssid, psk)  # DHCP; the box finds it by name or MAC
             time.sleep(2)  # give WLED time to save before it reboots
             self.wled.reboot()
             return True
@@ -343,7 +343,7 @@ class SyncLightService:
             home = st["home_connection"]
             ssid, psk = self._hotspot_credentials()
             self._call(self.net.ensure_hotspot, ssid, psk)
-            moved = self._move_led_controller(ssid, psk, LED_STATIC_IP, HOTSPOT_IP)
+            moved = self._move_led_controller(ssid, psk)
             net = self._net_state()
             net.update(mode="hotspot", home_connection=home)
             self.state.save()

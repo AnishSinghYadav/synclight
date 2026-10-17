@@ -105,7 +105,8 @@ class FakeWled:
 
             def do_GET(self):  # noqa: N802
                 if self.path == "/json/info":
-                    self._json({"ver": "0.15.0", "name": "SyncLight LED", "leds": {"count": fake.count}})
+                    self._json({"ver": "0.15.0", "name": "SyncLight LED", "mac": "c82b96230272",
+                                "leds": {"count": fake.count}})
                 else:
                     self._json(fake.state)
 

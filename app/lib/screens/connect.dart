@@ -5,6 +5,8 @@ import 'package:universal_ble/universal_ble.dart';
 import '../api.dart';
 import '../ble_api.dart';
 import '../discovery.dart';
+import '../theme.dart';
+import '../widgets/fx.dart';
 import 'home.dart';
 
 const _kindKey = 'box_kind'; // 'ble' or 'http'
@@ -172,97 +174,206 @@ class _ConnectScreenState extends State<ConnectScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final busy = _connecting != null;
     return Scaffold(
-      appBar: AppBar(title: const Text('SyncLight')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Icon(Icons.tv_rounded, size: 72, color: theme.colorScheme.primary),
-          const SizedBox(height: 12),
-          Text('Connect to your SyncLight box', textAlign: TextAlign.center, style: theme.textTheme.titleLarge),
-          const SizedBox(height: 6),
-          Text('Plug in the box and keep your phone near the TV.',
-              textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 24),
-          if (busy)
-            Card(
-              child: ListTile(
-                leading: const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)),
-                title: Text('Connecting to $_connecting…'),
-              ),
-            ),
-          if (_error != null) _errorCard(theme, _error!),
-          Row(children: [
-            Expanded(child: Text('Nearby boxes', style: theme.textTheme.titleSmall)),
-            if (!_scanning && _bleProblem == null)
-              TextButton.icon(onPressed: busy ? null : _startBleScan, icon: const Icon(Icons.refresh), label: const Text('Search again')),
-          ]),
-          const SizedBox(height: 4),
-          if (_bleProblem != null) ...[
-            _errorCard(theme, _bleProblem!),
-            TextButton(onPressed: _startBleScan, child: const Text('Try again')),
-          ] else if (_bleFound.isEmpty)
-            ListTile(
-              leading: _scanning
-                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3))
-                  : const Icon(Icons.bluetooth_disabled),
-              title: Text(_scanning ? 'Looking for SyncLight boxes…' : 'No box found'),
-              subtitle: _scanning ? null : const Text('Is the box plugged in? Give it a minute after powering on.'),
-            ),
-          for (final d in _bleFound)
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.bluetooth),
-                title: Text(prettyBoxName(d.name)),
-                subtitle: Text(d.rssi == null ? 'Nearby' : _signal(d.rssi!)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: busy ? null : () => _connectBle(d.deviceId, prettyBoxName(d.name)),
-              ),
-            ),
-          const SizedBox(height: 24),
-          ExpansionTile(
-            title: const Text('Connect over Wi-Fi (developer)'),
-            tilePadding: EdgeInsets.zero,
-            onExpansionChanged: (open) {
-              if (open && !_showWifi) _startWifiSearch();
-            },
-            children: [
-              for (final box in _wifiFound)
-                ListTile(
-                  leading: const Icon(Icons.wifi),
-                  title: Text(box.name),
-                  subtitle: Text(box.host),
-                  onTap: busy ? null : () => _connectHttp(box.host),
-                ),
-              Row(children: [
-                Expanded(
-                  child: TextField(
-                    controller: _manual,
-                    keyboardType: TextInputType.url,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'e.g. 192.168.1.70'),
-                    onSubmitted: (v) => _connectHttp(v),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 28, 20, 12),
+          children: [
+            FadeSlideIn(
+              child: Center(
+                child: RgbRing(
+                  size: 168,
+                  thickness: 6,
+                  seconds: busy ? 2 : 7,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: busy
+                        ? const Icon(Icons.bluetooth_searching, key: ValueKey('b'), size: 52, color: SL.text)
+                        : const Icon(Icons.tv_rounded, key: ValueKey('t'), size: 56, color: SL.text),
                   ),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(onPressed: busy ? null : () => _connectHttp(_manual.text), child: const Text('Connect')),
-              ]),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            const FadeSlideIn(
+              delay: Duration(milliseconds: 120),
+              child: Text('SyncLight',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -0.8, color: SL.text)),
+            ),
+            const SizedBox(height: 6),
+            const FadeSlideIn(
+              delay: Duration(milliseconds: 200),
+              child: Text('Your TV, in full color around it.',
+                  textAlign: TextAlign.center, style: TextStyle(color: SL.muted, fontSize: 15)),
+            ),
+            const SizedBox(height: 28),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: busy
+                  ? SLCard(
+                      key: const ValueKey('busy'),
+                      child: Row(children: [
+                        const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+                        const SizedBox(width: 14),
+                        Expanded(child: Text('Connecting to $_connecting…', style: const TextStyle(color: SL.text))),
+                      ]),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('idle')),
+            ),
+            if (_error != null) _errorCard(_error!),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 280),
+              child: SectionLabel(
+                'Nearby boxes',
+                trailing: _scanning
+                    ? const PulseDot(size: 8)
+                    : (_bleProblem == null
+                        ? TextButton.icon(
+                            onPressed: busy ? null : _startBleScan,
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Search again'),
+                          )
+                        : null),
+              ),
+            ),
+            if (_bleProblem != null) ...[
+              _errorCard(_bleProblem!),
+              TextButton(onPressed: _startBleScan, child: const Text('Try again')),
+            ] else if (_bleFound.isEmpty)
+              FadeSlideIn(
+                delay: const Duration(milliseconds: 340),
+                child: SLCard(
+                  child: Row(children: [
+                    Icon(_scanning ? Icons.radar : Icons.bluetooth_disabled, color: SL.muted),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(_scanning ? 'Looking for SyncLight boxes…' : 'No box found',
+                            style: const TextStyle(color: SL.text, fontWeight: FontWeight.w600)),
+                        if (!_scanning)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text('Is the box plugged in? Give it a minute after powering on.',
+                                style: TextStyle(color: SL.muted, fontSize: 13)),
+                          ),
+                      ]),
+                    ),
+                  ]),
+                ),
+              ),
+            for (var i = 0; i < _bleFound.length; i++)
+              FadeSlideIn(
+                key: ValueKey(_bleFound[i].deviceId),
+                delay: Duration(milliseconds: 60 * i),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: SLCard(
+                    onTap: busy ? null : () => _connectBle(_bleFound[i].deviceId, prettyBoxName(_bleFound[i].name)),
+                    child: Row(children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(color: SL.cardHigh, borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(Icons.lightbulb_outline, color: SL.text),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(prettyBoxName(_bleFound[i].name),
+                              style: const TextStyle(color: SL.text, fontSize: 16, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text(_bleFound[i].rssi == null ? 'Nearby' : _signal(_bleFound[i].rssi!),
+                              style: const TextStyle(color: SL.muted, fontSize: 13)),
+                        ]),
+                      ),
+                      _SignalBars(rssi: _bleFound[i].rssi),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.chevron_right, color: SL.faint),
+                    ]),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            ExpansionTile(
+              title: const Text('Connect over Wi-Fi (developer)', style: TextStyle(fontSize: 14)),
+              tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+              onExpansionChanged: (open) {
+                if (open && !_showWifi) _startWifiSearch();
+              },
+              children: [
+                for (final box in _wifiFound)
+                  ListTile(
+                    leading: const Icon(Icons.wifi, color: SL.muted),
+                    title: Text(box.name),
+                    subtitle: Text(box.host, style: const TextStyle(color: SL.muted)),
+                    onTap: busy ? null : () => _connectHttp(box.host),
+                  ),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _manual,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(hintText: 'e.g. 192.168.1.70'),
+                      onSubmitted: (v) => _connectHttp(v),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    style: FilledButton.styleFrom(minimumSize: const Size(96, 52)),
+                    onPressed: busy ? null : () => _connectHttp(_manual.text),
+                    child: const Text('Connect'),
+                  ),
+                ]),
+                const SizedBox(height: 8),
+              ],
+            ),
+            const MadeBy(),
+          ],
+        ),
       ),
     );
   }
 
   String _signal(int rssi) => rssi > -60 ? 'Very close' : rssi > -75 ? 'Nearby' : 'Far — move closer';
 
-  Widget _errorCard(ThemeData theme, String text) => Card(
-        color: theme.colorScheme.errorContainer,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text(text, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+  Widget _errorCard(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: SLCard(
+          color: const Color(0xFF2A1215),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.error_outline, color: SL.bad),
+            const SizedBox(width: 12),
+            Expanded(child: Text(text, style: const TextStyle(color: Color(0xFFFFC9CB)))),
+          ]),
         ),
       );
+}
+
+class _SignalBars extends StatelessWidget {
+  const _SignalBars({this.rssi});
+
+  final int? rssi;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = rssi ?? -80;
+    final level = r > -60 ? 3 : r > -75 ? 2 : 1;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        for (var i = 1; i <= 3; i++)
+          Container(
+            width: 4,
+            height: 6.0 + i * 4,
+            margin: const EdgeInsets.only(left: 2),
+            decoration: BoxDecoration(
+              color: i <= level ? SL.text : SL.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+      ],
+    );
+  }
 }
