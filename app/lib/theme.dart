@@ -147,7 +147,6 @@ ThemeData buildTheme() {
     progressIndicatorTheme: const ProgressIndicatorThemeData(color: Colors.white, linearTrackColor: SL.cardHigh),
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
       TargetPlatform.android: ZoomPageTransitionsBuilder(),
-      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
     }),
   );
 }
