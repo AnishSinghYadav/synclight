@@ -1,0 +1,11 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">SyncLight on %h</name>
+  <service>
+    <type>_synclight._tcp</type>
+    <port>8484</port>
+    <txt-record>api=/api/v1/rpc</txt-record>
+    <txt-record>proto=1</txt-record>
+  </service>
+</service-group>

@@ -1,0 +1,87 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  box-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the box agent
+        run: python3 -m unittest discover -s box/tests -v
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android project
+        working-directory: app
+        run: |
+          flutter --version
+          flutter create --platforms=android --org app.synclight --project-name synclight_app .
+          python3 ../tools/patch_android.py android/app/src/main/AndroidManifest.xml
+          # Same signing key every build, so new versions install over old ones.
+          mkdir -p ~/.android
+          cp ../tools/debug.keystore ~/.android/debug.keystore
+
+      - name: Build APK
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build apk --release \
+            --build-name=0.1.${{ github.run_number }} \
+            --build-number=${{ github.run_number }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+
+  release:
+    needs: [box-tests, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: dist
+
+      - name: Package
+        run: |
+          mkdir -p dist/synclight-box
+          cp -r box/agent box/deploy box/install.sh PROTOCOL.md dist/synclight-box/
+          find dist/synclight-box -name '__pycache__' -prune -exec rm -rf {} +
+          tar -C dist -czf synclight-box.tar.gz synclight-box
+          cp dist/app-release.apk synclight.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" synclight.apk synclight-box.tar.gz \
+            --title "SyncLight build ${{ github.run_number }}" \
+            --notes "App 0.1.${{ github.run_number }} and box package from commit ${{ github.sha }}." \
+            --latest

@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Flutter
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/pubspec.lock
+app/android/
+app/ios/
+app/linux/
+app/macos/
+app/windows/
+app/web/
+app/test/
+app/.metadata
+app/analysis_options.yaml
+app/*.iml
+app/.idea/

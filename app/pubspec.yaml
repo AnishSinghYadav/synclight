@@ -1,0 +1,17 @@
+name: synclight_app
+description: SyncLight - set up and control your TV ambient light.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: any
+  nsd: any
+  shared_preferences: any
+
+flutter:
+  uses-material-design: true
