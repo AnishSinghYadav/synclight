@@ -102,7 +102,7 @@ class SyncLightService:
 
         wl = {"reachable": False, "host": self.config["wled"]["host"]}
         try:
-            info = self.wled.info()
+            info = self.wled.info(quick=True)
             wl.update(reachable=True, led_count=(info.get("leds") or {}).get("count"),
                       version=info.get("ver"), name=info.get("name"))
         except WledUnavailable as exc:

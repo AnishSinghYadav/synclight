@@ -47,9 +47,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  bool _refreshing = false;
+
   Future<void> _refresh() async {
+    if (_refreshing) return; // never pile up requests
+    _refreshing = true;
     try {
-      final s = await api.call('system.status');
+      final s = await api.call('system.status', const {}, const Duration(seconds: 15));
       if (!mounted) return;
       final light = (s['light'] as Map?) ?? {};
       setState(() {
@@ -64,6 +68,8 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       if (mounted) setState(() => _error = explainError(e));
+    } finally {
+      _refreshing = false;
     }
   }
 

@@ -7,6 +7,7 @@ import json
 import logging
 import queue
 import threading
+import time
 
 import dbus
 import dbus.exceptions
@@ -33,6 +34,7 @@ OM_IFACE = "org.freedesktop.DBus.ObjectManager"
 PROP_IFACE = "org.freedesktop.DBus.Properties"
 
 APP_PATH = "/app/synclight"
+STALE_AFTER = 12  # seconds; the app stops waiting long before this
 ADV_PATH = "/app/synclight/advertisement0"
 
 
@@ -292,13 +294,17 @@ class BleServer:
             log.warning("Bad chunk from %s: %s", device, exc)
             return
         if message is not None:
-            self._requests.put((device, message))
+            self._requests.put((device, message, time.monotonic()))
         else:
             log.debug("BLE chunk %d bytes from %s", len(chunk), device)
 
     def _worker(self):
         while True:
-            device, message = self._requests.get()
+            device, message, received = self._requests.get()
+            if time.monotonic() - received > STALE_AFTER:
+                log.warning("Dropping a Bluetooth request that waited %.0f s (the app gave up on it)",
+                            time.monotonic() - received)
+                continue
             try:
                 request = json.loads(message)
             except ValueError:

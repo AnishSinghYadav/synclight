@@ -38,15 +38,21 @@ class _NetworkScreenState extends State<NetworkScreen> {
     super.dispose();
   }
 
+  bool _refreshing = false;
+
   Future<void> _refresh() async {
+    if (_refreshing) return; // never pile up requests
+    _refreshing = true;
     try {
-      final st = await api.call('net.status');
+      final st = await api.call('net.status', const {}, const Duration(seconds: 15));
       if (mounted) setState(() {
         _st = st;
         _error = null;
       });
     } catch (e) {
       if (mounted) setState(() => _error = explainError(e));
+    } finally {
+      _refreshing = false;
     }
   }
 

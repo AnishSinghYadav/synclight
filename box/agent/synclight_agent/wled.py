@@ -30,8 +30,9 @@ class WledClient:
                 raise WledUnavailable(f"cannot resolve {self.host}: {exc}") from exc
         return self._ip
 
-    def _request(self, path, body=None):
-        for attempt in (1, 2):
+    def _request(self, path, body=None, timeout=None, retry=True):
+        attempts = (1, 2) if retry else (2,)
+        for attempt in attempts:
             ip = self._resolve(refresh=attempt == 2)
             data = json.dumps(body).encode() if body is not None else None
             req = urllib.request.Request(
@@ -41,14 +42,17 @@ class WledClient:
                 headers={"Content-Type": "application/json"},
             )
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
                     raw = resp.read()
                 return json.loads(raw) if raw else {}
             except (urllib.error.URLError, OSError, ValueError) as exc:
                 if attempt == 2:
                     raise WledUnavailable(f"WLED at {self.host} not reachable: {exc}") from exc
 
-    def info(self):
+    def info(self, quick=False):
+        """quick: one short attempt, for status screens that must not hang on an offline ESP."""
+        if quick:
+            return self._request("/json/info", timeout=1.5, retry=False)
         return self._request("/json/info")
 
     def state(self):
