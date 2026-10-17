@@ -143,7 +143,6 @@ before the network changes. Bluetooth clients stay connected throughout.
   Header bit 7 = "more chunks follow", bits 0-6 = sequence number, starting at 0 for each message
   and wrapping from 127 back to 0 inside long messages.
 - The app sends one request at a time and waits for its reply; the box answers requests in order.
-- Wi-Fi/hotspot provisioning commands (`net.*`) will be added in the hotspot phase.
 
 ## 4. Discovery
 - HTTP: the box advertises `_synclight._tcp` on port 8484 via mDNS (hostname `synclight.local`).
