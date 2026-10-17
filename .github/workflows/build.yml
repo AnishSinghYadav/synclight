@@ -37,7 +37,10 @@ jobs:
 
       - name: Generate Android project
         working-directory: app
+        shell: bash
         run: |
+          set -o pipefail
+          exec > >(tee -a "$RUNNER_TEMP/build.log") 2>&1
           flutter --version
           flutter create --platforms=android --org app.synclight --project-name synclight_app .
           python3 ../tools/patch_android.py android/app/src/main/AndroidManifest.xml
@@ -47,11 +50,22 @@ jobs:
 
       - name: Build APK
         working-directory: app
+        shell: bash
         run: |
+          set -o pipefail
+          exec > >(tee -a "$RUNNER_TEMP/build.log") 2>&1
           flutter pub get
           flutter build apk --release \
             --build-name=0.1.${{ github.run_number }} \
             --build-number=${{ github.run_number }}
+
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        run: |
+          # Put the end of the log into an annotation so it can be read through the API.
+          tail -n 80 "$RUNNER_TEMP/build.log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN{ORS="%0A"}{print}' > "$RUNNER_TEMP/tail.txt"
+          echo "::error title=Build log::$(cat "$RUNNER_TEMP/tail.txt")"
 
       - uses: actions/upload-artifact@v4
         with:
