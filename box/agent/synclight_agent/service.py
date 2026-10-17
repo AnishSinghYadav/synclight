@@ -42,6 +42,7 @@ class SyncLightService:
         self._lock = threading.RLock()
         self._calibrating = False
         self._saved_wled_state = None
+        self.ble_info = {"enabled": False, "advertising": False}
 
     # ---- helpers ----------------------------------------------------------------------
     def _call(self, fn, *args):
@@ -70,7 +71,8 @@ class SyncLightService:
 
     def status(self):
         out = {"version": __version__, "name": self.config["name"], "calibrating": self._calibrating,
-               "light": dict(self.state.data["light"]), "layout": self.state.data.get("layout")}
+               "light": dict(self.state.data["light"]), "layout": self.state.data.get("layout"),
+               "bluetooth": dict(self.ble_info)}
         hyp = {"reachable": False, "admin": False, "capture_active": False, "led_output": None}
         try:
             info = self.hyperion.serverinfo()

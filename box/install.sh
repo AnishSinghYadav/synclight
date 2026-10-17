@@ -10,6 +10,18 @@ fi
 SRC="$(cd "$(dirname "$0")" && pwd)"
 echo "==> Installing SyncLight agent from $SRC"
 
+# Bluetooth support (app control without Wi-Fi)
+NEED=""
+for pkg in bluez python3-dbus python3-gi; do
+  dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
+done
+if [ -n "$NEED" ]; then
+  echo "==> Installing:$NEED"
+  apt-get update -qq && apt-get install -y -qq $NEED
+fi
+rfkill unblock bluetooth 2>/dev/null || true
+systemctl enable --now bluetooth >/dev/null 2>&1 || true
+
 install -d -m 755 /opt/synclight /etc/synclight /var/lib/synclight
 rm -rf /opt/synclight/synclight_agent
 cp -r "$SRC/agent/synclight_agent" /opt/synclight/

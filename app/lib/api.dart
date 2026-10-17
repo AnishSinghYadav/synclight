@@ -14,9 +14,23 @@ class BoxError implements Exception {
   String toString() => message;
 }
 
+/// One connection to a box. Same messages over every transport (PROTOCOL.md).
+abstract class BoxApi {
+  /// Shown to the user, e.g. "SyncLight-AB12" or "192.168.1.70".
+  String get label;
+
+  Future<Map<String, dynamic>> call(
+    String cmd, [
+    Map<String, dynamic> args = const {},
+    Duration timeout = const Duration(seconds: 8),
+  ]);
+
+  void close();
+}
+
 /// Talks to synclight-agent over HTTP: POST /api/v1/rpc with {id, cmd, args}.
-class BoxApi {
-  BoxApi(this.host, {this.port = 8484});
+class HttpBoxApi implements BoxApi {
+  HttpBoxApi(this.host, {this.port = 8484});
 
   final String host;
   final int port;
@@ -25,6 +39,10 @@ class BoxApi {
 
   Uri get _uri => Uri(scheme: 'http', host: host, port: port, path: '/api/v1/rpc');
 
+  @override
+  String get label => host;
+
+  @override
   Future<Map<String, dynamic>> call(
     String cmd, [
     Map<String, dynamic> args = const {},
@@ -56,11 +74,16 @@ class BoxApi {
       final data = body['data'];
       return data is Map<String, dynamic> ? data : <String, dynamic>{};
     }
-    final err = (body is Map && body['error'] is Map) ? body['error'] as Map : const {};
-    throw BoxError('${err['code'] ?? 'error'}', '${err['message'] ?? 'Unknown error'}');
+    throw errorFromReply(body);
   }
 
+  @override
   void close() => _client.close();
+}
+
+BoxError errorFromReply(dynamic body) {
+  final err = (body is Map && body['error'] is Map) ? body['error'] as Map : const {};
+  return BoxError('${err['code'] ?? 'error'}', '${err['message'] ?? 'Unknown error'}');
 }
 
 /// Friendly text for common error codes.
@@ -69,7 +92,7 @@ String explainError(Object e) {
     switch (e.code) {
       case 'offline':
       case 'timeout':
-        return 'Can\'t reach the SyncLight box. Is it powered on and on the same Wi-Fi?';
+        return 'Can\'t reach the SyncLight box. Is it powered on and nearby?';
       case 'wled_unavailable':
         return 'The LED controller isn\'t responding. Check that it has power.';
       case 'hyperion_unavailable':

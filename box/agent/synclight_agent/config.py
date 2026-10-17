@@ -14,6 +14,7 @@ DEFAULT_CONFIG = {
     "hyperion": {"host": "127.0.0.1", "port": 19444, "password": "hyperion"},
     "wled": {"host": "synclight-led.local"},
     "http": {"host": "0.0.0.0", "port": 8484},
+    "bluetooth": {"enabled": True},
     "state_file": "/var/lib/synclight/state.json",
 }
 

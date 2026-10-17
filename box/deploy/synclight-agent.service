@@ -1,7 +1,7 @@
 [Unit]
 Description=SyncLight agent (app control for the ambient light box)
-Wants=network-online.target
-After=network-online.target
+Wants=network-online.target bluetooth.service
+After=network-online.target bluetooth.service
 
 [Service]
 Type=simple

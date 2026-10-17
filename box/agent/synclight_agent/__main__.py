@@ -43,6 +43,15 @@ def main(argv=None):
     service = SyncLightService(config, state)
     dispatcher = Dispatcher(service)
 
+    if config.get("bluetooth", {}).get("enabled", True):
+        try:
+            from . import ble_bluez
+        except ImportError as exc:
+            log.warning("Bluetooth disabled, missing package: %s (sudo apt install python3-dbus python3-gi)", exc)
+            service.ble_info.update(error=f"missing package: {exc}")
+        else:
+            ble_bluez.start(dispatcher, service.ble_info)
+
     stop_event = threading.Event()
     threading.Thread(target=restore_on_boot, args=(service, stop_event), daemon=True).start()
 

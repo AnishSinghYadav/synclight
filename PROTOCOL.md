@@ -7,7 +7,7 @@ care how it is connected:
 | Transport | When | Status |
 |---|---|---|
 | HTTP `POST http://<box>:8484/api/v1/rpc` | Development, and when box + phone share a network | **v0 (now)** |
-| Bluetooth LE (GATT) | First-time setup and everyday control once the box runs its private hotspot | Next phase |
+| Bluetooth LE (GATT) | Normal app connection; no Wi-Fi needed on the phone side | v0.2 |
 
 ## 1. Envelope
 
@@ -57,6 +57,7 @@ Error:
   "wled":     { "reachable": true, "host": "synclight-led.local", "led_count": 236, "version": "0.15.0" },
   "light":    { "power": true, "brightness": 80, "mode": "sync", "color": [255,120,0], "effect": null },
   "layout":   { "configured": true, "counts": {"left":43,"top":75,"right":43,"bottom":75}, "start_corner": "bottom_left", "direction": "cw", "offset": 0 },
+  "bluetooth": { "enabled": true, "advertising": true, "name": "SyncLight-AB12" },
   "calibrating": false
 }
 ```
@@ -117,17 +118,22 @@ Layout args can be given in either of two forms:
 | `layout.apply` | layout args | Saves the layout into Hyperion and the box |
 | `layout.get` | – | Current layout |
 
-## 3. Bluetooth LE mapping (next phase)
+## 3. Bluetooth LE transport
 - One custom GATT service, UUID `5f1e0001-8a3c-4b6e-9d2a-53796e634c74`
-  - `...0002` **request** characteristic (write)
-  - `...0003` **response** characteristic (notify)
-- Messages are the same JSON envelope, UTF-8, split into chunks that fit the negotiated MTU.
-  Each chunk starts with a 1-byte header: bit 7 = "more chunks follow", bits 0-6 = sequence number.
+  - `5f1e0002-…` **request** characteristic (write with response)
+  - `5f1e0003-…` **response** characteristic (notify)
+- The app negotiates a larger MTU (asks for 247) after connecting.
+- Messages are the same JSON envelope, UTF-8, split into chunks:
+  1 header byte + up to `min(MTU-3, 512) - 1` bytes of payload.
+  Header bit 7 = "more chunks follow", bits 0-6 = sequence number, starting at 0 for each message
+  and wrapping from 127 back to 0 inside long messages.
+- The app sends one request at a time and waits for its reply; the box answers requests in order.
 - Wi-Fi/hotspot provisioning commands (`net.*`) will be added in the hotspot phase.
 
 ## 4. Discovery
 - HTTP: the box advertises `_synclight._tcp` on port 8484 via mDNS (hostname `synclight.local`).
-- BLE: advertises name `SyncLight-XXXX` with the service UUID above.
+- BLE: advertises the service UUID above with the short name `SL-XXXX` (fits in one advertising
+  packet); the device name after connecting is `SyncLight-XXXX`. XXXX = end of the Pi's Bluetooth address.
 
 ## 5. Versioning
 Breaking changes bump the path (`/api/v2/rpc`) and the BLE service UUID. New commands and new
