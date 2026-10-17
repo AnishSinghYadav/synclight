@@ -41,10 +41,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final kind = prefs.getString(_kindKey);
-    final id = prefs.getString(_idKey);
-    final name = prefs.getString(_nameKey);
+    String? kind, id, name;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      kind = prefs.getString(_kindKey);
+      id = prefs.getString(_idKey);
+      name = prefs.getString(_nameKey);
+    } catch (_) {
+      // Remembering the box is a convenience; never block connecting on it.
+    }
     if (kind == 'http' && id != null) _manual.text = id;
     if (widget.autoConnect && kind != null && id != null) {
       final ok = kind == 'ble'
@@ -87,10 +92,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
   }
 
   Future<void> _remember(String kind, String id, String name) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kindKey, kind);
-    await prefs.setString(_idKey, id);
-    await prefs.setString(_nameKey, name);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kindKey, kind);
+      await prefs.setString(_idKey, id);
+      await prefs.setString(_nameKey, name);
+    } catch (_) {
+      // Not fatal: the app just won't reconnect automatically next time.
+    }
   }
 
   void _openHome(BoxApi api) {

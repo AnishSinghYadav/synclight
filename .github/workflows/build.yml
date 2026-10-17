@@ -44,6 +44,8 @@ jobs:
           flutter --version
           flutter create --platforms=android --org app.synclight --project-name synclight_app .
           python3 ../tools/patch_android.py android/app/src/main/AndroidManifest.xml
+          # Flutter's Gradle plugin applies android/app/proguard-rules.pro to release builds.
+          cp ../tools/proguard-rules.pro android/app/proguard-rules.pro
           # Same signing key every build, so new versions install over old ones.
           mkdir -p ~/.android
           cp ../tools/debug.keystore ~/.android/debug.keystore
@@ -58,6 +60,12 @@ jobs:
           flutter build apk --release \
             --build-name=0.1.${{ github.run_number }} \
             --build-number=${{ github.run_number }}
+          # Fail the build if the shrinker still removed the shared_preferences entry point.
+          MAP=build/app/outputs/mapping/release/mapping.txt
+          if [ -f "$MAP" ]; then
+            grep -A60 "^io.flutter.plugins.sharedpreferences.SharedPreferencesApiRegistrar ->" "$MAP" | grep -q "getAll" \
+              || { echo "shared_preferences getAll was stripped"; exit 1; }
+          fi
 
       - name: Report build errors
         if: failure()
