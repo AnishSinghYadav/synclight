@@ -38,23 +38,35 @@ class BleBoxApi implements BoxApi {
   String get label => name;
 
   Future<void> connect() async {
-    await UniversalBle.connect(deviceId, timeout: const Duration(seconds: 15));
-    _connected = true;
-    _connectionSub ??= UniversalBle.connectionStream(deviceId).listen((connected) {
-      _connected = connected;
-      if (!connected) {
-        _reassembler.reset();
-        _failAll(BoxError('offline', 'Bluetooth connection lost.'));
-      }
-    });
-    await UniversalBle.discoverServices(deviceId);
+    var step = 'connect';
     try {
-      _mtu = await UniversalBle.requestMtu(deviceId, 247);
-    } catch (_) {
-      _mtu = 23;
+      await UniversalBle.connect(deviceId, timeout: const Duration(seconds: 15));
+      _connected = true;
+      _connectionSub ??= UniversalBle.connectionStream(deviceId).listen((connected) {
+        _connected = connected;
+        if (!connected) {
+          _reassembler.reset();
+          _failAll(BoxError('offline', 'Bluetooth connection lost.'));
+        }
+      });
+      step = 'discover services';
+      final services = await UniversalBle.discoverServices(deviceId);
+      if (!services.any((s) => s.uuid.toLowerCase() == bleServiceUuid)) {
+        throw StateError('SyncLight service not found (${services.map((s) => s.uuid).join(', ')})');
+      }
+      step = 'MTU';
+      try {
+        _mtu = await UniversalBle.requestMtu(deviceId, 247);
+      } catch (_) {
+        _mtu = 23;
+      }
+      step = 'subscribe';
+      _valueSub ??= UniversalBle.characteristicValueStream(deviceId, bleResponseUuid).listen(_onChunk);
+      await UniversalBle.subscribeNotifications(deviceId, bleServiceUuid, bleResponseUuid);
+    } catch (e) {
+      _connected = false;
+      throw BoxError('ble_$step', 'Bluetooth step "$step" failed: $e');
     }
-    _valueSub ??= UniversalBle.characteristicValueStream(deviceId, bleResponseUuid).listen(_onChunk);
-    await UniversalBle.subscribeNotifications(deviceId, bleServiceUuid, bleResponseUuid);
   }
 
   void _onChunk(Uint8List chunk) {

@@ -293,6 +293,8 @@ class BleServer:
             return
         if message is not None:
             self._requests.put((device, message))
+        else:
+            log.debug("BLE chunk %d bytes from %s", len(chunk), device)
 
     def _worker(self):
         while True:
@@ -304,7 +306,11 @@ class BleServer:
             else:
                 reply = self.dispatcher.handle(request)
             data = json.dumps(reply, separators=(",", ":")).encode()
-            chunks = split(data, chunk_payload_for_mtu(self._mtus.get(device, 23)))
+            mtu = self._mtus.get(device, 23)
+            chunks = split(data, chunk_payload_for_mtu(mtu))
+            log.info("BLE %s: %s -> ok=%s, %d bytes in %d chunk(s), mtu %d, subscribed=%s",
+                     device.rsplit("/", 1)[-1], request.get("cmd") if isinstance(request, dict) else "?",
+                     reply.get("ok"), len(data), len(chunks), mtu, bool(self.response and self.response.notifying))
             GLib.idle_add(self._send_chunks, chunks)
 
     def _send_chunks(self, chunks):

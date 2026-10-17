@@ -108,7 +108,11 @@ class _ConnectScreenState extends State<ConnectScreen> {
     final api = BleBoxApi(id, name);
     try {
       await api.connect();
-      await api.call('system.ping', const {}, const Duration(seconds: 6));
+      try {
+        await api.call('system.ping', const {}, const Duration(seconds: 6));
+      } on BoxError catch (e) {
+        throw BoxError(e.code, 'Connected, but the first message got no reply (${e.message})');
+      }
       await _remember('ble', id, name);
       if (mounted) _openHome(api);
       return true;
@@ -117,7 +121,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (mounted) {
         setState(() {
           _connecting = null;
-          if (!quiet) _error = 'Could not connect to $name. Move closer to the box and try again.';
+          if (!quiet) _error = 'Could not connect to $name. Move closer to the box and try again.\n\nDetails: $e';
         });
       }
       return false;
