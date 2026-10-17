@@ -153,3 +153,41 @@ before the network changes. Bluetooth clients stay connected throughout.
 ## 5. Versioning
 Breaking changes bump the path (`/api/v2/rpc`) and the BLE service UUID. New commands and new
 fields in `data` are not breaking; the app must ignore unknown fields.
+
+## Reliability and health (agent 0.3.3)
+
+`system.health` takes no arguments and returns `{ok, checks: [{name, ok, message}]}`.
+It checks WLED response time and reported RSSI, Hyperion availability and LED output,
+capture activity, saved layout, and the hotspot channel. It does not change settings.
+A successful RPC means the checks ran; inspect `data.ok` for their result. The app's
+**Check connection** button displays the checks. WLED status also includes
+`response_ms` and `signal_dbm` when available. `capture_active` means Hyperion has an
+active V4L source; it does not independently prove that an HDMI picture is present.
+
+Optional `/etc/synclight/config.json` settings (merged with existing configuration):
+
+```json
+{
+  "network": {"hotspot_channel": 1},
+  "signal_guard": {"enabled": true, "grace_seconds": 10, "fade_seconds": 3}
+}
+```
+
+The preferred hotspot channel is applied the next time hotspot setup runs; installing
+an update does not interrupt an active Wi-Fi connection. The SSID/password are retained.
+
+In powered-on TV sync mode, no active V4L source for 10 seconds starts a 3-second
+brightness fade. Capture returning restores the user's brightness. Color/effect modes,
+calibration, and network switching are excluded. Temporary dimming is never saved as
+the user's brightness. Hyperion communication errors and missing status fields do not
+trigger a fade. Disable `signal_guard.enabled` to retain the previous behavior.
+Capture cards that output a black/blue/logo screen when HDMI is unplugged can still
+report active capture: configure Hyperion's native capture signal detection for that
+card. This guard does not classify video frames or infer physical TV power.
+
+WLED requests bypass HTTP proxies and serialize access to reduce ESP8266 request
+contention. Failed or truncated reads retry once with refreshed DNS/DHCP lookup.
+Successful checks learn the controller MAC for DHCP recovery, including manually
+provisioned controllers. Every 20 seconds the agent verifies the WLED endpoint and
+Hyperion's configured destination, including after a Hyperion restart. No subnet-wide
+scan or automatic LED output override is performed.

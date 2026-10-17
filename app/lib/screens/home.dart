@@ -120,6 +120,41 @@ class _HomeScreenState extends State<HomeScreen> {
     _poll = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
   }
 
+  bool _checkingHealth = false;
+
+  Future<void> _checkHealth() async {
+    if (_checkingHealth) return;
+    setState(() => _checkingHealth = true);
+    try {
+      final result = await api.call('system.health', const {}, const Duration(seconds: 30));
+      if (!mounted) return;
+      final checks = (result['checks'] as List?) ?? [];
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Connection health'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: checks.map((check) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(check['ok'] == true ? Icons.check_circle_outline : Icons.warning_amber,
+                    color: check['ok'] == true ? SL.good : SL.warn),
+                title: Text(check['message'] as String),
+              )).toList(),
+            ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+        ),
+      );
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(explainError(e))));
+    } finally {
+      if (mounted) setState(() => _checkingHealth = false);
+    }
+  }
+
   void _openNetwork() {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => NetworkScreen(api: api)));
   }
@@ -317,6 +352,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ]);
               }),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _checkingHealth ? null : _checkHealth,
+              icon: const Icon(Icons.health_and_safety_outlined),
+              label: Text(_checkingHealth ? 'Checking connection…' : 'Check connection'),
             ),
             const SizedBox(height: 18),
             FadeSlideIn(

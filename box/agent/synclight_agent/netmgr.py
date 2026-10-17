@@ -125,7 +125,7 @@ class NetManager:
         return out
 
     # ---- changes ----------------------------------------------------------------------
-    def ensure_hotspot(self, ssid, psk, channel=6):
+    def ensure_hotspot(self, ssid, psk, channel=1):
         settings = [
             "802-11-wireless.ssid", ssid,
             "802-11-wireless.mode", "ap",

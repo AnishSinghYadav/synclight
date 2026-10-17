@@ -15,6 +15,8 @@ DEFAULT_CONFIG = {
     "wled": {"host": "synclight-led.local"},
     "http": {"host": "0.0.0.0", "port": 8484},
     "bluetooth": {"enabled": True},
+    "network": {"hotspot_channel": 1},
+    "signal_guard": {"enabled": True, "grace_seconds": 10, "fade_seconds": 3},
     "state_file": "/var/lib/synclight/state.json",
 }
 

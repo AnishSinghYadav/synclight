@@ -3,6 +3,8 @@
 import json
 import logging
 import socket
+import http.client
+import threading
 import urllib.error
 import urllib.request
 
@@ -21,6 +23,8 @@ class WledClient:
         self._port = int(port) if port else 80
         self.timeout = timeout
         self._ip = None
+        self._request_lock = threading.RLock()
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         self.fallback_lookup = None  # optional callable returning an IP when the name doesn't resolve
 
     def _resolve(self, refresh=False):
@@ -35,9 +39,16 @@ class WledClient:
         return self._ip
 
     def _request(self, path, body=None, timeout=None, retry=True):
+        with self._request_lock:
+            return self._request_locked(path, body, timeout, retry)
+
+    def _request_locked(self, path, body=None, timeout=None, retry=True):
         attempts = (1, 2) if retry else (2,)
         for attempt in attempts:
             ip = self._resolve(refresh=attempt == 2)
+            if attempt == 2 and self.fallback_lookup:
+                ip = self.fallback_lookup() or ip
+                self._ip = ip
             data = json.dumps(body).encode() if body is not None else None
             req = urllib.request.Request(
                 f"http://{ip}:{self._port}{path}",
@@ -46,10 +57,10 @@ class WledClient:
                 headers={"Content-Type": "application/json"},
             )
             try:
-                with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+                with self._opener.open(req, timeout=timeout or self.timeout) as resp:
                     raw = resp.read()
                 return json.loads(raw) if raw else {}
-            except (urllib.error.URLError, OSError, ValueError) as exc:
+            except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as exc:
                 if attempt == 2:
                     raise WledUnavailable(f"WLED at {self.host} not reachable: {exc}") from exc
 
@@ -92,8 +103,9 @@ class WledClient:
             self._port = int(port) if port else 80
             self._ip = None
 
-    def resolve(self):
-        return self._resolve(refresh=True)
+    def resolve(self, refresh=True):
+        with self._request_lock:
+            return self._resolve(refresh=refresh)
 
     def show_ranges(self, ranges, bri=160):
         """Light ranges of pixels and turn everything else off.

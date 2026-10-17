@@ -50,6 +50,9 @@ class SyncLightService:
         self._switching = False
         self._net_error = None
         self._hyperion_led_host = None
+        self._signal_missing_since = None
+        self._signal_brightness = None
+        self._boot_restored = False
         # If the ESP's name doesn't resolve, look it up by MAC address in the hotspot's DHCP leases.
         self.wled.fallback_lookup = lambda: lookup_lease((self.state.data.get("network") or {}).get("led_mac"))
 
@@ -102,11 +105,17 @@ class SyncLightService:
 
         wl = {"reachable": False, "host": self.config["wled"]["host"]}
         try:
+            started = time.monotonic()
             info = self.wled.info(quick=True)
+            wl["response_ms"] = round((time.monotonic() - started) * 1000)
+            wl["signal_dbm"] = (info.get("wifi") or {}).get("rssi")
+            self._remember_led(info)
             wl.update(reachable=True, led_count=(info.get("leds") or {}).get("count"),
                       version=info.get("ver"), name=info.get("name"))
         except WledUnavailable as exc:
             wl["error"] = str(exc)
+        out["signal_guard"] = {"enabled": self.config.get("signal_guard", {}).get("enabled", True),
+                               "dimmed": self._signal_brightness is not None}
         out["wled"] = wl
         return out
 
@@ -116,6 +125,7 @@ class SyncLightService:
             raise _bad("on must be true or false")
         with self._lock:
             self._not_calibrating()
+            self.reset_signal_guard()
             self._call(self.hyperion.set_component, "ALL", on)
             self.state.data["light"]["power"] = on
             self.state.save()
@@ -133,6 +143,7 @@ class SyncLightService:
     def mode(self, mode, color=None, effect=None):
         with self._lock:
             self._not_calibrating()
+            self.reset_signal_guard()
             light = self.state.data["light"]
             # Remove leftovers from Hyperion's web page (priority 1) so the app stays in control.
             try:
@@ -186,6 +197,7 @@ class SyncLightService:
     # ---- calibration ------------------------------------------------------------------
     def calibrate_start(self):
         with self._lock:
+            self.reset_signal_guard()
             if not self._calibrating:
                 self._saved_wled_state = self._call(self.wled.state)
                 # Stop Hyperion from streaming so WLED accepts direct control.
@@ -342,7 +354,8 @@ class SyncLightService:
                 return dict(st, changed=False)
             home = st["home_connection"]
             ssid, psk = self._hotspot_credentials()
-            self._call(self.net.ensure_hotspot, ssid, psk)
+            self._call(self.net.ensure_hotspot, ssid, psk,
+                       self.config.get("network", {}).get("hotspot_channel", 1))
             moved = self._move_led_controller(ssid, psk)
             net = self._net_state()
             net.update(mode="hotspot", home_connection=home)
@@ -375,10 +388,10 @@ class SyncLightService:
         if self._calibrating or self._switching:
             return
         try:
-            ip = self.wled.resolve()
+            info = self.wled.info()
+            self._remember_led(info)
+            ip = self.wled.resolve(refresh=False)
         except WledUnavailable:
-            return
-        if ip == self._hyperion_led_host:
             return
         try:
             dev = self.hyperion.get_led_device()
@@ -388,3 +401,83 @@ class SyncLightService:
             self._hyperion_led_host = ip
         except HyperionError as exc:
             log.debug("LED host sync skipped: %s", exc)
+
+
+    def _remember_led(self, info):
+        mac = info.get("mac")
+        with self._lock:
+            if mac and self._net_state().get("led_mac") != mac:
+                self._net_state()["led_mac"] = mac
+                self.state.save()
+
+    def health(self):
+        """On-demand checks with actionable messages; does not change settings."""
+        status = self.status()
+        checks = []
+        def add(name, ok, message):
+            checks.append({"name": name, "ok": bool(ok), "message": message})
+        h, w = status["hyperion"], status["wled"]
+        add("engine", h["reachable"], "Light engine is running." if h["reachable"] else
+            "Hyperion is unavailable. Check its service and configured password.")
+        add("controller", w["reachable"],
+            f"WLED replied in {w.get('response_ms')} ms; signal {w.get('signal_dbm', '?')} dBm."
+            if w["reachable"] else "WLED did not respond. Check its power, hotspot connection and Wi-Fi packet loss.")
+        add("output", h.get("led_output"), "LED output is enabled." if h.get("led_output") else
+            "Enable LED Device in Hyperion's dashboard.")
+        add("capture", h.get("capture_active"), "HDMI capture is active." if h.get("capture_active") else
+            "No active capture input. Check the HDMI source and USB capture device.")
+        add("layout", status.get("layout") is not None, "TV layout is saved." if status.get("layout") else
+            "Run Set up TV to map the LED strip.")
+        try:
+            net = self.net_status()
+            if net["mode"] == "hotspot":
+                channel = self.net.get_field("synclight-ap", "802-11-wireless.channel")
+                add("hotspot", channel == str(self.config.get("network", {}).get("hotspot_channel", 1)),
+                    f"Hotspot channel {channel}. Configured preferred channel: "
+                    f"{self.config.get('network', {}).get('hotspot_channel', 1)}.")
+            else:
+                add("network", net["mode"] != "offline", f"Network mode: {net['mode']}.")
+        except (CommandError, NetError) as exc:
+            add("network", False, str(exc))
+        return {"checks": checks, "ok": all(c["ok"] for c in checks)}
+
+    def reset_signal_guard(self):
+        with self._lock:
+            if self._signal_brightness is not None:
+                self.hyperion.set_brightness(self.state.data["light"]["brightness"])
+            self._signal_brightness = None
+            self._signal_missing_since = None
+
+    def signal_tick(self, now=None):
+        """Fade only sync mode when Hyperion reports no active V4L input.
+
+        A capture card's generated no-signal image requires native Hyperion signal detection.
+        Connection errors are not interpreted as signal loss.
+        """
+        with self._lock:
+            cfg = self.config.get("signal_guard", {})
+            light = self.state.data["light"]
+            if (not cfg.get("enabled", True) or light["mode"] != "sync" or not light["power"]
+                    or self._calibrating or self._switching):
+                self.reset_signal_guard()
+                return
+            info = self.hyperion.serverinfo()
+            # Missing fields are unknown, not an instruction to turn the lights off.
+            if "priorities" not in info:
+                return
+            active = any(p.get("componentId") == "V4L" and p.get("active")
+                         for p in info["priorities"])
+            if active:
+                self.reset_signal_guard()
+                return
+            now = time.monotonic() if now is None else now
+            if self._signal_missing_since is None:
+                self._signal_missing_since = now
+            elapsed = now - self._signal_missing_since - cfg.get("grace_seconds", 10)
+            if elapsed < 0:
+                return
+            fraction = min(1, elapsed / max(0.1, cfg.get("fade_seconds", 3)))
+            value = round(light["brightness"] * (1 - fraction))
+            if value != self._signal_brightness:
+                self.hyperion.set_brightness(value)
+                self._signal_brightness = value

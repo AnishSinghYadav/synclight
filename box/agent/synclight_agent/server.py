@@ -18,6 +18,7 @@ class Dispatcher:
         self.commands = {
             "system.ping": s.ping,
             "system.status": s.status,
+            "system.health": s.health,
             "light.power": s.power,
             "light.brightness": s.brightness,
             "light.mode": s.mode,

@@ -42,3 +42,27 @@ python3 -m unittest discover -s box/tests -v
 
 The app's `android/` folder is generated in CI with `flutter create`, then patched by
 `tools/patch_android.py` (network permissions, cleartext HTTP to the box, app name).
+
+## Reliability update (0.3.3)
+
+Hotspot setup now defaults to channel **1**, following packet-loss testing on the Pi/ESP
+setup. Set `network.hotspot_channel` to override it. Existing Wi-Fi credentials and TV
+layout survive installation. See [the reliability settings](PROTOCOL.md#reliability-and-health-agent-033)
+for recovery, health checks, and capture-loss fading.
+
+After installing, verify the saved channel and device status:
+
+```bash
+nmcli -g 802-11-wireless.channel connection show synclight-ap
+curl -fsS http://127.0.0.1:8484/api/v1/status | python3 -m json.tool
+curl -fsS http://127.0.0.1:8484/api/v1/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"id":1,"cmd":"system.health","args":{}}' | python3 -m json.tool
+```
+
+Hardware acceptance checks: power-cycle Pi and ESP together; change colors in the app;
+verify TV sync; unplug/reconnect HDMI and check fading/resume; check static color is
+unaffected by HDMI loss. Native Hyperion signal detection may be needed for capture
+cards that keep generating frames without HDMI. Keep a backup of `/etc/synclight`,
+`/var/lib/synclight/state.json`, and `/opt/synclight` before deployment. The old app remains
+compatible with agent 0.3.3; the health button requires rebuilding the Android app.

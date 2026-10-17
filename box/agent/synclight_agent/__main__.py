@@ -21,7 +21,9 @@ def restore_on_boot(service, stop_event):
     delay = 2
     while not stop_event.is_set():
         try:
-            service.apply_saved_state()
+            with service._lock:
+                service.apply_saved_state()
+                service._boot_restored = True
             log.info("Saved light state applied (admin login: %s)", service.hyperion.admin)
             return
         except HyperionError as exc:
@@ -37,6 +39,16 @@ def keep_led_host_in_sync(service, stop_event):
             service.sync_led_host()
         except Exception:  # noqa: BLE001
             log.exception("LED host sync failed")
+
+
+def guard_signal(service, stop_event):
+    while not stop_event.wait(1):
+        if not service._boot_restored:
+            continue
+        try:
+            service.signal_tick()
+        except HyperionError as exc:
+            log.debug("Signal check unavailable: %s", exc)
 
 
 def main(argv=None):
@@ -64,6 +76,8 @@ def main(argv=None):
     stop_event = threading.Event()
     threading.Thread(target=restore_on_boot, args=(service, stop_event), daemon=True).start()
     threading.Thread(target=keep_led_host_in_sync, args=(service, stop_event), daemon=True).start()
+
+    threading.Thread(target=guard_signal, args=(service, stop_event), daemon=True).start()
 
     http = make_http_server(dispatcher, config["http"]["host"], config["http"]["port"])
     log.info("SyncLight agent %s listening on %s:%s", __version__, config["http"]["host"], config["http"]["port"])
