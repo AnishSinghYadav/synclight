@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
 DEFAULT_STATE = {
     "light": {"power": True, "brightness": 80, "mode": "sync", "color": [255, 120, 0], "effect": None},
     "layout": None,
+    "network": {"mode": None},
 }
 
 

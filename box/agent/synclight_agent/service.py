@@ -1,11 +1,13 @@
 """Business logic behind every protocol command (see PROTOCOL.md)."""
 
 import logging
+import secrets
 import threading
 import time
 
 from . import __version__, layout
 from .hyperion import HyperionAuthError, HyperionClient, HyperionError, HyperionUnavailable
+from .netmgr import HOTSPOT_IP, LED_STATIC_IP, NetError, NetManager
 from .wled import WledClient, WledUnavailable
 
 log = logging.getLogger(__name__)
@@ -43,6 +45,13 @@ class SyncLightService:
         self._calibrating = False
         self._saved_wled_state = None
         self.ble_info = {"enabled": False, "advertising": False}
+        self.net = NetManager()
+        self._default_wled_host = config["wled"]["host"]
+        self._switching = False
+        self._net_error = None
+        self._hyperion_led_host = None
+        if (self.state.data.get("network") or {}).get("mode") == "hotspot":
+            self.wled.use_host(LED_STATIC_IP)
 
     # ---- helpers ----------------------------------------------------------------------
     def _call(self, fn, *args):
@@ -56,6 +65,8 @@ class SyncLightService:
             raise CommandError("internal", f"Hyperion: {exc}") from exc
         except WledUnavailable as exc:
             raise CommandError("wled_unavailable", str(exc)) from exc
+        except NetError as exc:
+            raise CommandError("network", str(exc)) from exc
 
     def _not_calibrating(self):
         if self._calibrating:
@@ -72,7 +83,9 @@ class SyncLightService:
     def status(self):
         out = {"version": __version__, "name": self.config["name"], "calibrating": self._calibrating,
                "light": dict(self.state.data["light"]), "layout": self.state.data.get("layout"),
-               "bluetooth": dict(self.ble_info)}
+               "bluetooth": dict(self.ble_info),
+               "network": {"mode": (self.state.data.get("network") or {}).get("mode") or "home",
+                           "switching": self._switching, "error": self._net_error}}
         hyp = {"reachable": False, "admin": False, "capture_active": False, "led_output": None}
         try:
             info = self.hyperion.serverinfo()
@@ -247,3 +260,131 @@ class SyncLightService:
 
     def layout_get(self):
         return {"layout": self.state.data.get("layout")}
+
+    # ---- network (private hotspot / home Wi-Fi) ---------------------------------------
+    def _suffix(self):
+        try:
+            with open("/sys/class/net/wlan0/address") as fh:
+                return fh.read().strip().replace(":", "")[-4:].upper()
+        except OSError:
+            return "0000"
+
+    def _net_state(self):
+        return self.state.data.setdefault("network", {})
+
+    def _hotspot_credentials(self):
+        net = self._net_state()
+        if not net.get("hotspot_ssid") or not net.get("hotspot_psk"):
+            net["hotspot_ssid"] = f"SyncLight-{self._suffix()}"
+            net["hotspot_psk"] = secrets.token_urlsafe(12)[:16]
+            self.state.save()
+        return net["hotspot_ssid"], net["hotspot_psk"]
+
+    def net_status(self):
+        net = self._net_state()
+        st = self._call(self.net.status, net.get("home_connection"))
+        st.update(
+            switching=self._switching,
+            error=self._net_error,
+            hotspot_ssid=net.get("hotspot_ssid"),
+            hotspot_password=net.get("hotspot_psk"),
+            hotspot_ip=HOTSPOT_IP,
+            led_controller_host=self.wled.host,
+        )
+        return st
+
+    def _start_switch(self, mode, home):
+        self._switching = True
+        self._net_error = None
+        threading.Thread(target=self._finish_switch, args=(mode, home), daemon=True).start()
+
+    def _finish_switch(self, mode, home):
+        time.sleep(2)  # let the reply reach the app first
+        net = self._net_state()
+        try:
+            if mode == "hotspot":
+                if self.net.activate_hotspot(home):
+                    self.wled.use_host(LED_STATIC_IP)
+                    log.info("Now running the private hotspot")
+                else:
+                    net["mode"] = "home"
+                    self.wled.use_host(self._default_wled_host)
+                    self._net_error = "The private Wi-Fi did not start, so the box went back to home Wi-Fi."
+            else:
+                self.net.activate_home(home)
+                self.wled.use_host(self._default_wled_host)
+                log.info("Now on home Wi-Fi (%s)", home)
+            self._hyperion_led_host = None  # re-check where the LED controller is
+            self.state.save()
+        except NetError as exc:
+            log.error("Network switch failed: %s", exc)
+            self._net_error = str(exc)
+        finally:
+            self._switching = False
+
+    def _move_led_controller(self, ssid, psk, static_ip=None, gateway=None):
+        try:
+            self.wled.set_wifi(ssid, psk, static_ip, gateway)
+            time.sleep(2)  # give WLED time to save before it reboots
+            self.wled.reboot()
+            return True
+        except WledUnavailable as exc:
+            log.warning("Could not reconfigure the LED controller: %s", exc)
+            return False
+
+    def net_use_hotspot(self):
+        with self._lock:
+            self._not_calibrating()
+            if self._switching:
+                raise CommandError("busy", "The box is already switching networks.")
+            st = self._call(self.net.status, self._net_state().get("home_connection"))
+            if st["mode"] == "hotspot":
+                return dict(st, changed=False)
+            home = st["home_connection"]
+            ssid, psk = self._hotspot_credentials()
+            self._call(self.net.ensure_hotspot, ssid, psk)
+            moved = self._move_led_controller(ssid, psk, LED_STATIC_IP, HOTSPOT_IP)
+            net = self._net_state()
+            net.update(mode="hotspot", home_connection=home)
+            self.state.save()
+            self._start_switch("hotspot", home)
+        return {"changed": True, "switching_to": "hotspot", "hotspot_ssid": ssid, "hotspot_password": psk,
+                "led_controller_moved": moved, "home_connection": home}
+
+    def net_use_home(self):
+        with self._lock:
+            self._not_calibrating()
+            if self._switching:
+                raise CommandError("busy", "The box is already switching networks.")
+            st = self._call(self.net.status, self._net_state().get("home_connection"))
+            if st["mode"] == "home":
+                return dict(st, changed=False)
+            home = st["home_connection"]
+            if not home:
+                raise CommandError("network", "No home Wi-Fi is saved on the box.")
+            home_ssid = self._call(self.net.get_field, home, "802-11-wireless.ssid")
+            home_psk = self._call(self.net.get_field, home, "802-11-wireless-security.psk", True)
+            moved = self._move_led_controller(home_ssid, home_psk)
+            self._net_state().update(mode="home", home_connection=home)
+            self.state.save()
+            self._start_switch("home", home)
+        return {"changed": True, "switching_to": "home", "home_connection": home, "led_controller_moved": moved}
+
+    def sync_led_host(self):
+        """Keep Hyperion's LED device address equal to where the ESP actually is. Safe to call often."""
+        if self._calibrating or self._switching:
+            return
+        try:
+            ip = self.wled.resolve()
+        except WledUnavailable:
+            return
+        if ip == self._hyperion_led_host:
+            return
+        try:
+            dev = self.hyperion.get_led_device()
+            if dev and dev.get("type") == "wled" and dev.get("host") != ip:
+                self.hyperion.set_instance_settings({"device": dict(dev, host=ip)})
+                log.info("Hyperion now sends to the LED controller at %s", ip)
+            self._hyperion_led_host = ip
+        except HyperionError as exc:
+            log.debug("LED host sync skipped: %s", exc)

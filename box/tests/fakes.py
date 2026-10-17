@@ -13,7 +13,7 @@ class FakeHyperion:
         self.components = {"ALL": True, "LEDDEVICE": True, "V4L": True, "SMOOTHING": True}
         self.priorities = {240: {"componentId": "V4L", "priority": 240}}
         self.brightness = 100
-        self.settings = {}
+        self.settings = {0: {"device": {"type": "wled", "host": "192.168.1.69", "hardwareLedCount": 236}}}
         self.effects = ["Rainbow swirl", "Knight rider", "Candle"]
         self.log = []
         fake = self
@@ -64,6 +64,11 @@ class FakeHyperion:
         if cmd == "adjustment":
             self.brightness = msg["adjustment"]["brightness"]
             return ok(), admin
+        if cmd == "config" and msg.get("subcommand") == "getconfig":
+            if not admin:
+                return err("No Authorization"), admin
+            return ok({"global": {"settings": {}},
+                       "instances": [{"id": i, "settings": st} for i, st in self.settings.items()]}), admin
         if cmd == "config" and msg.get("subcommand") == "setconfig":
             if not admin:
                 return err("No Authorization"), admin
@@ -83,6 +88,7 @@ class FakeWled:
         self.pixels = ["000000"] * count
         self.state = {"on": True, "bri": 128, "seg": [{"id": 0, "fx": 9, "col": [[255, 160, 0]]}]}
         self.posts = []
+        self.paths = []
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -106,6 +112,7 @@ class FakeWled:
             def do_POST(self):  # noqa: N802
                 data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 fake.posts.append(data)
+                fake.paths.append(self.path)
                 fake.apply(data)
                 self._json({"success": True})
 

@@ -38,6 +38,7 @@ Error:
 | `hyperion_auth` | Agent could not log in to Hyperion (wrong password in config) |
 | `wled_unavailable` | The LED controller (ESP) is not reachable |
 | `busy` | Command not allowed right now (e.g. normal control during calibration) |
+| `network` | Wi-Fi change failed (NetworkManager error) |
 | `internal` | Unexpected error — see agent log |
 
 ## 2. Commands
@@ -58,6 +59,7 @@ Error:
   "light":    { "power": true, "brightness": 80, "mode": "sync", "color": [255,120,0], "effect": null },
   "layout":   { "configured": true, "counts": {"left":43,"top":75,"right":43,"bottom":75}, "start_corner": "bottom_left", "direction": "cw", "offset": 0 },
   "bluetooth": { "enabled": true, "advertising": true, "name": "SyncLight-AB12" },
+  "network":   { "mode": "hotspot", "switching": false, "error": null },
   "calibrating": false
 }
 ```
@@ -117,6 +119,19 @@ Layout args can be given in either of two forms:
 | `layout.compute` | layout args | `{counts, order, offset, total}` — no changes made |
 | `layout.apply` | layout args | Saves the layout into Hyperion and the box |
 | `layout.get` | – | Current layout |
+
+### Network (private Wi-Fi)
+The box normally runs its own Wi-Fi ("SyncLight-XXXX", 192.168.4.1/24) that only the LED
+controller joins (fixed address 192.168.4.2). Home Wi-Fi is kept as a fallback and for development.
+
+| cmd | args | data |
+|---|---|---|
+| `net.status` | – | `{mode: "hotspot"\|"home"\|"offline", switching, error, active_connection, home_connection, home_ssid, hotspot_ssid, hotspot_password, hotspot_ip, led_controller_host}` |
+| `net.use_hotspot` | – | Moves the LED controller to the private Wi-Fi, then switches the box (in the background, ~30 s). If the hotspot cannot start, the box returns to home Wi-Fi and `net.status.error` says so. |
+| `net.use_home` | – | Moves the LED controller and the box back to home Wi-Fi (developer mode, updates). |
+
+Both switch commands reply first and switch about 2 s later, so a client on Wi-Fi gets its answer
+before the network changes. Bluetooth clients stay connected throughout.
 
 ## 3. Bluetooth LE transport
 - One custom GATT service, UUID `5f1e0001-8a3c-4b6e-9d2a-53796e634c74`

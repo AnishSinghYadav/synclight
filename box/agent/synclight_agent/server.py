@@ -30,6 +30,9 @@ class Dispatcher:
             "layout.compute": s.layout_compute,
             "layout.apply": s.layout_apply,
             "layout.get": s.layout_get,
+            "net.status": s.net_status,
+            "net.use_hotspot": s.net_use_hotspot,
+            "net.use_home": s.net_use_home,
         }
 
     def handle(self, message):

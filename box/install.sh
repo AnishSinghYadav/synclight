@@ -10,9 +10,9 @@ fi
 SRC="$(cd "$(dirname "$0")" && pwd)"
 echo "==> Installing SyncLight agent from $SRC"
 
-# Bluetooth support (app control without Wi-Fi)
+# Bluetooth (app control) and NetworkManager's hotspot DHCP (dnsmasq-base)
 NEED=""
-for pkg in bluez python3-dbus python3-gi; do
+for pkg in bluez python3-dbus python3-gi dnsmasq-base; do
   dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
 done
 if [ -n "$NEED" ]; then
@@ -65,6 +65,11 @@ systemctl restart synclight-agent
 echo "==> Waiting for the agent to start"
 for _ in $(seq 1 15); do
   if curl -fsS http://127.0.0.1:8484/api/v1/ping >/dev/null 2>&1; then
+    # Bluetooth registers a moment after start; wait for it so the status below is accurate.
+    for _ in $(seq 1 10); do
+      curl -fsS http://127.0.0.1:8484/api/v1/status | grep -q '"advertising": true' && break
+      sleep 1
+    done
     echo
     curl -fsS http://127.0.0.1:8484/api/v1/status | python3 -m json.tool
     echo

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/color_picker.dart';
 import 'connect.dart';
+import 'network.dart';
 import 'setup.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -118,11 +119,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final hyp = (s?['hyperion'] as Map?) ?? {};
     final wled = (s?['wled'] as Map?) ?? {};
     final layout = s?['layout'];
+    final net = (s?['network'] as Map?) ?? {};
 
     return Scaffold(
       appBar: AppBar(
         title: Text(s?['name'] == null ? 'SyncLight' : 'SyncLight · ${s!['name']}'),
         actions: [
+          IconButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => NetworkScreen(api: api))),
+            icon: const Icon(Icons.router),
+            tooltip: 'Box network',
+          ),
           IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh), tooltip: 'Refresh'),
           IconButton(onPressed: _switchBox, icon: const Icon(Icons.swap_horiz), tooltip: 'Other box'),
         ],
@@ -259,6 +266,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       wled['reachable'] == true ? '${wled['led_count'] ?? '?'} LEDs' : 'Not responding'),
                   _statusRow(Icons.settings_input_hdmi, 'HDMI picture', hyp['capture_active'] == true,
                       hyp['capture_active'] == true ? 'Receiving' : 'No signal'),
+                  _statusRow(
+                      Icons.router,
+                      'Box network',
+                      net['error'] == null,
+                      net['switching'] == true
+                          ? 'Switching…'
+                          : net['mode'] == 'hotspot'
+                              ? 'Private Wi-Fi'
+                              : 'Home Wi-Fi (developer)'),
                   _statusRow(Icons.tv, 'TV setup', layout != null,
                       layout != null ? '${(layout as Map)['total']} LEDs placed' : 'Not done yet'),
                 ],

@@ -136,6 +136,47 @@ class HyperionClient:
     def set_brightness(self, value):
         self.request({"command": "adjustment", "adjustment": {"brightness": int(value)}})
 
+    def get_config(self):
+        """Full configuration (admin)."""
+        self._require_admin()
+        return self.request({"command": "config", "subcommand": "getconfig"}) or {}
+
+    def get_led_device(self, instance=0):
+        """The LED device settings ({"type": "wled", "host": ...}) of an instance, or None."""
+        config = self.get_config()
+
+        def find(node):
+            if isinstance(node, dict):
+                dev = node.get("device")
+                if isinstance(dev, dict) and "type" in dev:
+                    return dev
+                for value in node.values():
+                    hit = find(value)
+                    if hit:
+                        return hit
+            elif isinstance(node, list):
+                for item in node:
+                    hit = find(item)
+                    if hit:
+                        return hit
+            return None
+
+        instances = config.get("instances") if isinstance(config, dict) else None
+        if isinstance(instances, list):
+            for inst in instances:
+                if isinstance(inst, dict) and inst.get("id", 0) == instance:
+                    return find(inst)
+        return find(config)
+
+    def _require_admin(self):
+        if not self.admin:
+            self.close()
+            self.call({"command": "serverinfo"})
+            if not self.admin:
+                raise HyperionAuthError(
+                    "Not logged in to Hyperion. Check the password in /etc/synclight/config.json"
+                )
+
     def set_instance_settings(self, settings, instance=0):
         """Persist settings (e.g. {"leds": [...]}) for one instance. Needs admin login."""
         if not self.admin:

@@ -57,6 +57,36 @@ class WledClient:
     def set_state(self, state):
         return self._request("/json/state", state)
 
+    def set_config(self, cfg):
+        """Write settings (POST /json/cfg). WLED saves them to flash in its next loop."""
+        return self._request("/json/cfg", cfg)
+
+    def set_wifi(self, ssid, psk, static_ip=None, gateway=None):
+        """Replace the ESP's first Wi-Fi network. static_ip/gateway like "192.168.4.2" or None for DHCP."""
+        def quad(text):
+            return [int(x) for x in text.split(".")] if text else [0, 0, 0, 0]
+        entry = {"ssid": ssid, "psk": psk, "ip": quad(static_ip), "gw": quad(gateway),
+                 "sn": [255, 255, 255, 0] if static_ip else [0, 0, 0, 0]}
+        self.set_config({"nw": {"ins": [entry]}, "id": {"mdns": "synclight-led"}})
+
+    def reboot(self):
+        try:
+            self.set_state({"rb": True})
+        except WledUnavailable:
+            pass  # it may drop the connection while rebooting
+
+    def use_host(self, host):
+        """Point this client at a different address (e.g. after the ESP changed networks)."""
+        if host != self.host:
+            self.host = host
+            name, _, port = host.partition(":")
+            self._name = name
+            self._port = int(port) if port else 80
+            self._ip = None
+
+    def resolve(self):
+        return self._resolve(refresh=True)
+
     def show_ranges(self, ranges, bri=160):
         """Light ranges of pixels and turn everything else off.
 

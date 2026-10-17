@@ -30,6 +30,15 @@ def restore_on_boot(service, stop_event):
             delay = min(delay * 2, 15)
 
 
+def keep_led_host_in_sync(service, stop_event):
+    """Every 20 s, make sure Hyperion sends to the ESP's current address."""
+    while not stop_event.wait(20):
+        try:
+            service.sync_led_host()
+        except Exception:  # noqa: BLE001
+            log.exception("LED host sync failed")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="SyncLight agent")
     parser.add_argument("--config", default="/etc/synclight/config.json")
@@ -54,6 +63,7 @@ def main(argv=None):
 
     stop_event = threading.Event()
     threading.Thread(target=restore_on_boot, args=(service, stop_event), daemon=True).start()
+    threading.Thread(target=keep_led_host_in_sync, args=(service, stop_event), daemon=True).start()
 
     http = make_http_server(dispatcher, config["http"]["host"], config["http"]["port"])
     log.info("SyncLight agent %s listening on %s:%s", __version__, config["http"]["host"], config["http"]["port"])
