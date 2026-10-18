@@ -61,7 +61,8 @@ jobs:
           set -o pipefail
           exec > >(tee -a "$RUNNER_TEMP/build.log") 2>&1
           flutter pub get
-          flutter analyze --no-fatal-infos --no-fatal-warnings
+          # flutter create generates a sample counter test unrelated to this app.
+          flutter analyze lib --no-fatal-infos --no-fatal-warnings
           flutter build apk --release \
             --build-name=0.1.${{ github.run_number }} \
             --build-number=${{ github.run_number }}
