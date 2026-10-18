@@ -2,11 +2,13 @@ name: Build
 
 on:
   push:
+    branches: [main, "codex/**"]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-${{ github.ref }}
@@ -59,6 +61,7 @@ jobs:
           set -o pipefail
           exec > >(tee -a "$RUNNER_TEMP/build.log") 2>&1
           flutter pub get
+          flutter analyze --no-fatal-infos --no-fatal-warnings
           flutter build apk --release \
             --build-name=0.1.${{ github.run_number }} \
             --build-number=${{ github.run_number }}
@@ -88,6 +91,9 @@ jobs:
           path: app/build/app/outputs/flutter-apk/app-release.apk
 
   release:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: write
     needs: [box-tests, android]
     runs-on: ubuntu-latest
     steps:

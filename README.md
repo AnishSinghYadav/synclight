@@ -66,3 +66,11 @@ unaffected by HDMI loss. Native Hyperion signal detection may be needed for capt
 cards that keep generating frames without HDMI. Keep a backup of `/etc/synclight`,
 `/var/lib/synclight/state.json`, and `/opt/synclight` before deployment. The old app remains
 compatible with agent 0.3.3; the health button requires rebuilding the Android app.
+
+### GitHub builds
+
+Pushes to `main` or `codex/**` branches and pull requests targeting `main` run the
+Python tests and Android build. Android analysis runs before APK compilation.
+Download the APK from the run's `apk` artifact when testing a branch. Only successful
+`main` runs publish a release containing `synclight.apk` and `synclight-box.tar.gz`.
+The workflow can also be started manually from GitHub Actions.
